@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MailRoom</title>
+<link rel="stylesheet" href="/static/styles.css">
+<script>
+  /* apply the saved theme before first paint (the app also stores it server-side) */
+  try { const t = localStorage.getItem("mailroom-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+          <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#lg)" stroke-width="2.4"/>
+          <path d="M4.5 9.5 16 18l11.5-8.5" fill="none" stroke="url(#lg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="26" cy="7" r="3.2" fill="#22d3ee"/></svg>
+      </span>
+      <span class="name">MailRoom</span>
+    </div>
+    <nav>
+      <button class="tab active" data-view="run">
+        <svg viewBox="0 0 20 20"><path d="M6 4.5v11l9-5.5z" fill="currentColor"/></svg>Run</button>
+      <button class="tab" data-view="review">
+        <svg viewBox="0 0 20 20"><path d="M3 11h4l1.5 2.5h3L13 11h4M4.5 5h11L17 11v4.5H3V11z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Review <span id="pending-badge" class="badge" hidden></span></button>
+      <button class="tab" data-view="recaps">
+        <svg viewBox="0 0 20 20"><path d="M5.5 2.5h6l3.5 3.5v11.5h-9.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.5 2.5V6H15M8 10h5M8 13h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Recaps</button>
+      <button class="tab" data-view="history">
+        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4.3l2.8 1.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>History</button>
+      <button class="tab" data-view="guide">
+        <svg viewBox="0 0 20 20"><path d="M3.5 4.5c2.2-.9 4.4-.9 6.5.6 2.1-1.5 4.3-1.5 6.5-.6v11c-2.2-.9-4.4-.9-6.5.6-2.1-1.5-4.3-1.5-6.5-.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 5.1v11" stroke="currentColor" stroke-width="1.6"/></svg>Guide</button>
+      <button class="tab" data-view="settings">
+        <svg viewBox="0 0 20 20"><path d="M10 7.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zm6.4 3.8.1-1-.1-1 1.6-1.3-1.6-2.8-2 .7a6 6 0 0 0-1.7-1L12.4 2.5H7.6l-.3 2.1a6 6 0 0 0-1.7 1l-2-.7L2 7.7 3.6 9l-.1 1 .1 1L2 12.3l1.6 2.8 2-.7a6 6 0 0 0 1.7 1l.3 2.1h4.8l.3-2.1a6 6 0 0 0 1.7-1l2 .7 1.6-2.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Settings</button>
+    </nav>
+    <div class="side-foot">
+      <div class="theme-switch" role="group" aria-label="Appearance">
+        <button type="button" data-theme-set="auto" title="Match macOS" aria-label="Match macOS">
+          <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg></button>
+        <button type="button" data-theme-set="light" title="Light" aria-label="Light">
+          <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+        <button type="button" data-theme-set="dark" title="Dark" aria-label="Dark">
+          <svg viewBox="0 0 20 20"><path d="M15.8 12.6A6.5 6.5 0 0 1 7.4 4.2a6.5 6.5 0 1 0 8.4 8.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+      </div>
+      <span id="busy" class="pill live hidden"><i></i>run in progress</span>
+      <span id="idle" class="pill idle"><i></i>idle</span>
+      <p class="safe"><svg viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Drafts only. Nothing is ever sent.</p>
+    </div>
+  </aside>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<main>
+  <section id="view-run" class="view">
+    <div class="page-head">
+      <h2 class="title">Run the email assistant</h2>
+      <p class="hint">Same job, different brain: reply drafts with free-slot proposals, event checks, and the recap. Settings, senders and history are shared with n8n.</p>
+    </div>
+    <div class="lookback" role="group" aria-label="Look-back window">
+      <span class="lb-label">Look back</span>
+      <div class="seg" id="lookback">
+        <button data-lb="0" class="on" title="Replies 48 h, events and recap 24 h">Standard</button>
+        <button data-lb="24">24 h</button><button data-lb="48">48 h</button>
+        <button data-lb="72">3 days</button><button data-lb="168">7 days</button>
+        <button data-lb="custom">Custom</button>
+      </div>
+      <span class="lb-custom" hidden><input id="lookback-hours" type="number" min="1" max="168" step="1" placeholder="1-168"> hours</span>
+      <span class="hint" id="lookback-note">Replies 48 h, events and recap 24 h</span>
+    </div>
+    <div id="jobs" class="cards engines"></div>
+    <div id="run-panel" class="run-panel hidden">
+      <div class="run-head">
+        <div id="phases" class="phases">
+          <span data-phase="drafting">Drafting</span><span data-phase="events">Events</span><span data-phase="recap">Recap</span>
+        </div>
+        <div class="run-actions"><span id="stop-note" class="hint"></span> <button id="btn-stop" class="ghost danger hidden">Stop</button></div>
+      </div>
+      <div class="progress"><i id="progress-bar"></i></div>
+      <pre id="run-log" class="log hidden"></pre>
+    </div>
+    <section class="panel auto" id="auto">
+      <div class="auto-head">
+        <div class="auto-tt">
+          <h2>Automatic runs <span class="scope local">this Mac</span> <button type="button" class="info" data-info="auto" aria-label="How automatic runs work" aria-expanded="false">i</button></h2>
+          <p class="hint" id="auto-summary">Off: runs start only when you press Run.</p>
+        </div>
+        <div class="seg" id="auto-mode" role="group" aria-label="Run mode">
+          <button type="button" data-mode="manual" class="on">Manual</button><button type="button" data-mode="auto">Automatic</button>
+        </div>
+      </div>
+      <div class="as-help" id="help-auto" hidden><ul>
+        <li>MailRoom starts the chosen engine on the days and at the times below. It is the same run as pressing Run: drafts only, nothing is ever sent.</li>
+        <li>Saving Automatic adds a background job to your Mac (a LaunchAgent in your user Library), so runs happen even when the MailRoom window is closed. Saving Manual removes it.</li>
+        <li>Your Mac must be on and you must be logged in. If the Mac was asleep at a scheduled time, macOS starts the run once when it wakes; times that passed while it was shut down are skipped.</li>
+        <li>Allowed hours are checked when a run starts, so a catch-up after waking at night is skipped. If another run is in progress, the automatic run is skipped.</li>
+      </ul></div>
+      <div class="auto-body" id="auto-body" hidden>
+        <div class="auto-grid">
+          <div class="auto-f">
+            <label for="auto-job">Engine</label>
+            <select id="auto-job"></select>
+          </div>
+          <div class="auto-f">
+            <label for="auto-lb">Look back</label>
+            <span class="auto-lb"><select id="auto-lb">
+              <option value="0">Standard</option><option value="24">24 h</option><option value="48">48 h</option>
+              <option value="72">3 days</option><option value="168">7 days</option><option value="custom">Custom</option>
+            </select><span class="lb-c" hidden><input id="auto-lb-h" type="number" min="1" max="168" step="1" placeholder="1-168"> hours</span></span>
+            <small class="hint" id="auto-lb-note"></small>
+          </div>
+        </div>
+        <div class="auto-f">
+          <label>Days</label>
+          <div class="chips" id="auto-days" role="group" aria-label="Days"></div>
+          <small class="hint"><button type="button" class="linkbtn" data-days="1,2,3,4,5">Weekdays</button> · <button type="button" class="linkbtn" data-days="1,2,3,4,5,6,7">Every day</button></small>
+        </div>
+        <div class="auto-f">
+          <label>Times</label>
+          <div class="times" id="auto-times"></div>
+          <span class="auto-add"><span class="tp" id="auto-time-new" data-label="New time"></span> <button type="button" class="ghost small" id="auto-time-add">+ Add time</button> <small class="hint" id="auto-time-note"></small></span>
+        </div>
+        <div class="auto-f">
+          <label class="chk-l"><input type="checkbox" id="auto-win"> Only between</label>
+          <span class="auto-win"><span class="tp" id="auto-win-s" data-label="From"></span> and <span class="tp" id="auto-win-e" data-label="To"></span></span>
+          <small class="hint">Allowed hours: a run that would start outside them is skipped.</small>
+        </div>
+        <label class="chk-l"><input type="checkbox" id="auto-notify" checked> Show a Mac notification when an automatic run finishes</label>
+      </div>
+      <div class="auto-foot">
+        <div class="auto-state" id="auto-state"></div>
+        <div class="auto-btns"><button type="button" class="ghost small" id="auto-kick" hidden>Start one now</button> <button type="button" class="primary" id="auto-save" disabled>Save</button></div>
+      </div>
+      <p class="hint err" id="auto-err" hidden></p>
+      <div class="auto-hist" id="auto-hist" hidden>
+        <h3>Recent automatic runs</h3>
+        <ul class="ah-list"></ul>
+      </div>
+    </section>
+  </section>
+
+  <section id="view-review" class="view hidden">
+    <div class="page-head">
+      <h2 class="title">Review</h2>
+      <p class="hint">Everything MailRoom prepared, from every engine and n8n: reply drafts and decision notes. They are already in Gmail → Drafts and are never sent by MailRoom: edit here, then open in Gmail to send, or discard.</p>
+    </div>
+    <nav class="quick-links" id="quick-links" aria-label="Open your Google apps"></nav>
+    <div class="rv-tools">
+      <button class="chip on" data-rf="all">All <span id="rf-all"></span></button>
+      <button class="chip" data-rf="reply">Replies <span id="rf-reply"></span></button>
+      <button class="chip" data-rf="note">Decision notes <span id="rf-note"></span></button>
+      <button id="btn-review-refresh" class="ghost">Refresh</button>
+    </div>
+    <div id="drafts"></div>
+  </section>
+
+  <section id="view-recaps" class="view hidden">
+    <div class="page-head">
+      <h2 class="title">Recaps</h2>
+      <p class="hint">Every 24&nbsp;h recap, from n8n and from the app engines, ranked by priority. The Google Doc is still created; this is the same content, here.</p>
+    </div>
+    <div class="recaps">
+      <aside id="recap-list" class="recap-list"></aside>
+      <article id="recap-view" class="recap-view"><p class="hint">Select a recap.</p></article>
+    </div>
+  </section>
+
+  <section id="view-history" class="view hidden">
+    <div class="page-head"><h2 class="title">History</h2><p class="hint">Every run, newest first. Click a row for its log.</p></div>
+    <div class="panel flush table-wrap">
+    <table id="runs">
+      <colgroup><col class="c-id"><col class="c-job"><col class="c-runner"><col class="c-model"><col class="c-status"><col class="c-when"><col></colgroup>
+      <thead><tr>
+      <th>#</th><th>Job</th><th>Runner</th><th>Model</th><th>Status</th><th>Started</th><th>Result</th>
+    </tr></thead><tbody></tbody></table>
+    </div>
+    <div id="run-detail"></div>
+  </section>
+
+  <section id="view-guide" class="view hidden">
+    <div class="page-head">
+      <h2 class="title">How to use MailRoom</h2>
+      <p class="hint">What each screen does, what the words mean, and which engine does what.</p>
+    </div>
+    <div id="guide-body"><p class="hint">Loading…</p></div>
+  </section>
+
+  <section id="view-settings" class="view hidden">
+    <div class="page-head"><h2 class="title">Settings</h2></div>
+    <nav class="subnav">
+      <a href="#s-addresses">Addresses</a><a href="#s-drafting">Drafting</a><a href="#s-scheduling">Scheduling</a><a href="#s-senders">Senders</a>
+      <a href="#s-signin">Sign-in</a><a href="#s-models">Models</a><a href="#s-events">Event words</a><a href="#s-priority">Priority levels</a><a href="#s-advgroup" class="adv-link">Advanced</a>
+    </nav>
+
+    <section class="panel" id="s-addresses">
+      <h2>Your addresses <span id="ad-summary" class="hint"></span></h2>
+      <p class="hint">Every address that lands in your Gmail: aliases, forwards (Hotmail, work, university…). Ticked addresses are tracked by every engine, n8n included: drafting, events and recap. By default all of them are.</p>
+      <div class="btn-row">
+        <button id="btn-ad-scan" class="ghost">Scan my mailbox</button>
+        <button id="btn-ad-all" class="ghost">Track all</button>
+        <button id="btn-ad-save" class="primary">Save</button>
+        <span id="ad-note" class="hint"></span>
+      </div>
+      <div id="ad-list" class="ad-list"></div>
+      <div id="ad-query" class="ad-query hidden"></div>
+    </section>
+
+    <section class="panel" id="s-drafting">
+      <h2>Reply drafting</h2>
+      <p class="hint">Which emails get reply drafts. Saved in n8n (with the Save button under Meeting scheduling), so every engine and the 14:00 run use it. Nothing is ever sent.</p>
+      <div id="rd-error" class="bad"></div>
+      <div class="rd-modes">
+        <label class="rd-mode"><input type="radio" name="rd-scope" value="senders">
+          <span><b>Tracked senders only</b><br><small>Only emails from the senders listed below. Precise; anyone else is ignored.</small></span></label>
+        <label class="rd-mode"><input type="radio" name="rd-scope" value="inbox">
+          <span><b>Whole inbox</b><br><small>Every inbox email of the reply window, minus Promotions/Social/Updates/Forums, no-reply and newsletters. Drafts only where a reply is expected. The sender list still supplies per-sender instructions.</small></span></label>
+      </div>
+      <div class="rd-grid">
+        <label>Sign replies as <input id="rd-signature" type="text"></label>
+        <label>Max emails per run <input id="rd-max" type="number" min="1" max="50"></label>
+        <label class="wide">Default instructions <small>(used when the sender has none)</small>
+          <textarea id="rd-notes" rows="2"></textarea></label>
+      </div>
+    </section>
+
+    <section class="panel" id="s-scheduling">
+      <h2>Meeting scheduling</h2>
+      <p class="hint">Before proposing times, MailRoom checks every busy calendar below, plus the sender's own calendar if one is set. The sender's category decides which hours can be offered and where the meeting is booked.</p>
+
+      <div class="ms-block">
+        <h3>Calendars to check</h3>
+        <p class="hint">Time that is taken in any of these is never offered.</p>
+        <span id="rd-busy" class="rd-checks"></span>
+      </div>
+
+      <div class="ms-block">
+        <h3>By category</h3>
+        <div class="ms-table" role="table" aria-label="Hours and booking calendar per category">
+          <div class="ms-row ms-head" role="row">
+            <span role="columnheader">Category</span><span role="columnheader">Hours that can be offered</span><span role="columnheader">Book the meeting in</span>
+          </div>
+          <div class="ms-row" role="row">
+            <span class="ms-cat" role="rowheader">Full-time job</span>
+            <label><span class="ms-lab">Hours that can be offered</span><input id="rd-h-fulltime" type="text" placeholder="Mon-Fri 09:00-17:00; Wed 18:00-20:00"></label>
+            <label><span class="ms-lab">Book the meeting in</span><select id="rd-book-fulltime"></select></label>
+          </div>
+          <div class="ms-row" role="row">
+            <span class="ms-cat" role="rowheader">Professional career<small>work hours always excluded</small></span>
+            <label><span class="ms-lab">Hours that can be offered</span><input id="rd-h-career" type="text" placeholder="Mon-Fri 17:30-20:00"></label>
+            <label><span class="ms-lab">Book the meeting in</span><select id="rd-book-career"></select></label>
+          </div>
+          <div class="ms-row" role="row">
+            <span class="ms-cat" role="rowheader">Any time</span>
+            <label><span class="ms-lab">Hours that can be offered</span><input id="rd-h-anytime" type="text" placeholder="Daily 09:00-21:00"></label>
+            <label><span class="ms-lab">Book the meeting in</span><select id="rd-book-anytime"></select></label>
+          </div>
+        </div>
+        <p class="hint ms-note">Write days and times like the grey examples; separate several periods with a semicolon.</p>
+      </div>
+
+      <div class="ms-block">
+        <h3>Work shifts and defaults</h3>
+        <div class="ms-grid">
+          <label>Work calendar <select id="rd-workcal"></select>
+            <small>Your shifts: full-time job meetings go inside them, other meetings avoid them.</small></label>
+          <label>Shortest event that counts as a shift
+            <span class="ms-unit"><input id="rd-presence" type="number" min="1" max="12" step="0.5"> hours</span>
+            <small>Events in the work calendar at least this long count as shifts.</small></label>
+          <label>Senders without a category count as <select id="rd-defcat"></select>
+            <small>Applies to every tracked sender whose category is Default.</small></label>
+        </div>
+      </div>
+
+      <div class="btn-row ms-actions">
+        <button id="btn-rd-save" class="primary">Save</button>
+        <button id="btn-rd-cals" class="ghost">Refresh calendar list from Google</button>
+        <span id="rd-saved" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="s-senders">
+      <h2>Tracked senders <span id="rd-count" class="hint"></span></h2>
+      <div class="table-wrap">
+      <table id="rd-senders"><thead><tr>
+        <th>Active</th><th>Email or @domain</th><th>Who</th><th>Category</th><th>Calendar</th><th>Instructions for replies</th><th></th>
+      </tr></thead><tbody></tbody></table>
+      </div>
+      <div class="rd-add">
+        <input id="rd-new-match" type="text" placeholder="anna@example.com, @client.com">
+        <input id="rd-new-name" type="text" placeholder="Who (optional), e.g. Anna - Acme">
+        <select id="rd-new-cat"></select>
+        <select id="rd-new-cal"></select>
+        <input id="rd-new-notes" type="text" placeholder="Instructions (optional), e.g. formal, in French">
+        <button id="btn-rd-add" class="primary">Add sender</button>
+      </div>
+    </section>
+
+    <section class="panel" id="s-signin">
+      <h2>Engine sign-in <span class="scope local">this Mac</span> <button type="button" class="info" data-info="signin" aria-label="How sign-in works" aria-expanded="false">i</button></h2>
+      <div class="as-help" id="help-signin" hidden>Claude, ChatGPT and Gemini run on your own plans through their command-line tools, and each tool keeps its own sign-in (in the macOS Keychain or its settings folder). MailRoom never sees or stores your password.<br><b>Sign in</b> opens Terminal with the tool's sign-in command (<code>claude auth login</code>, <code>codex login</code>, <code>gemini</code>); a browser window asks you to log in.<br><b>Verify</b> checks the sign-in and sends one tiny prompt ("Reply with the word ok."), which uses a very small part of your plan, and shows the exact model that answered.</div>
+      <p class="hint">Sign in once per engine; sign in again when an engine reports an expired session.</p>
+      <div id="signin" class="auth-list"></div>
+    </section>
+
+    <section class="panel" id="s-models">
+      <h2>Models <small>one per engine</small></h2>
+      <p class="hint">Pick the exact model and the effort (how much the model reasons before answering: higher is slower and uses more of your plan) for each Run button. The effort is remembered per model. Ollama lists what is installed on this Mac. The CLIs cannot list models on a subscription sign-in, so their lists are the exact IDs and effort levels each vendor documents (date and source under each row); choose <b>Custom…</b> for a newer ID. <b>Test</b> sends one tiny prompt and shows the exact model the engine reports. A job with its own <code>model:</code> in <code>jobs.yaml</code> overrides the choice here.</p>
+      <button id="btn-models" class="ghost">Refresh</button>
+      <div id="models" class="emodels"></div>
+    </section>
+
+    <div data-as-slot="events"></div>
+    <div data-as-slot="priority"></div>
+    <div id="app-settings"></div>
+
+    <section class="adv-group" id="s-advgroup">
+      <div class="adv-head">
+        <div>
+          <h2>Advanced <span class="scope local">developer</span></h2>
+          <p class="hint">Connections, keys, limits and checks, for development and troubleshooting.</p>
+        </div>
+        <button id="btn-adv" class="ghost" aria-expanded="false" aria-controls="adv-body">Show</button>
+      </div>
+      <div id="adv-body" hidden>
+        <nav class="adv-index">
+          <a href="#s-google">Google account</a><a href="#s-secrets">Secrets</a><a href="#s-providers">Engine health</a><a href="#s-windows">Windows &amp; limits</a><a href="#s-connections">Connections</a><a href="#s-engines">Timeouts</a><a href="#s-scan">Address scan</a><a href="#s-links">Quick links</a><a href="#s-webhook">Webhook key</a><a href="#s-n8n">n8n workflows</a><a href="#s-diag">Diagnostics</a><a href="#s-rules">rules.yaml</a>
+        </nav>
+
+        <section class="panel" id="s-google">
+          <h2>Google account</h2>
+          <div id="google-status" class="box"></div>
+          <button id="btn-google" class="primary">Connect / re-authorize Google</button>
+        </section>
+
+        <section class="panel" id="s-secrets">
+          <h2>Secrets <span class="scope local">macOS Keychain</span></h2>
+          <p class="hint">A saved value is never shown again. Paste a new one and press Save to replace it.</p>
+          <div id="secrets"></div>
+        </section>
+
+        <section class="panel" id="s-providers">
+          <h2>Engine health</h2>
+          <p class="hint">Test sends one tiny prompt to the engine (uses a little of your plan). Diagnostics below checks sign-in without using it.</p>
+          <div id="providers"></div>
+        </section>
+
+        <div data-as-slot="windows"></div>
+        <div data-as-slot="connections"></div>
+        <div data-as-slot="engines"></div>
+        <div data-as-slot="scan"></div>
+        <div data-as-slot="links"></div>
+
+        <section class="panel" id="s-webhook">
+          <h2>Webhook key</h2>
+          <p class="hint">A secret only this app and n8n know. n8n refuses any request to start the Gmail Assistant that does not carry it. The key lives in the macOS Keychain and in an n8n credential; it is never shown.</p>
+          <div id="wk-status" class="hint"></div>
+          <button id="btn-wk" class="primary">Create key</button>
+          <div id="wk-result"></div>
+        </section>
+
+        <section class="panel" id="s-n8n">
+          <h2>n8n workflows</h2>
+          <p class="hint">Uses your n8n API key to find where n8n is and what its webhook URLs actually are.</p>
+          <button id="btn-n8n" class="primary">Discover workflows</button>
+          <div id="n8n-list"></div>
+        </section>
+
+        <section class="panel" id="s-diag">
+          <h2>Diagnostics</h2>
+          <p class="hint">Runs every service check in isolation and reports each one separately.</p>
+          <button id="btn-checks" class="primary">Run all checks</button>
+          <div id="checks"></div>
+        </section>
+
+        <section class="panel" id="s-rules">
+          <h2>Legacy rules file <span class="scope local">not used by the current engines</span> <button type="button" class="info" data-info="rules" aria-label="What is this" aria-expanded="false">i</button></h2>
+          <div class="as-help" id="help-rules" hidden>This is <code>config/rules.yaml</code>, the rule file of the older "pipeline" runner: your identity, email categories, priority rules (VIP senders, keywords that make an email urgent), the Google Sheets recap and its calendar slot rules. None of the Run buttons uses these today; <code>n8n: base_url</code> is the only line still read, and only when Advanced → Connections → n8n address is left at its default.<br>Edit the text and press Save: MailRoom checks it is valid YAML first and keeps the previous file in <code>data/</code> as a backup. Indentation matters: use spaces, never tabs.</div>
+          <details class="adv"><summary>Show rules.yaml</summary>
+            <textarea id="rules-yaml" rows="22" spellcheck="false"></textarea>
+            <div class="btn-row"><button id="btn-rules-save" class="primary">Save rules.yaml</button><span id="rules-note" class="hint"></span></div>
+          </details>
+        </section>
+      </div>
+    </section>
+  </section>
+  </section>
+</main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

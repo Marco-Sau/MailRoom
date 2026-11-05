@@ -1,0 +1,887 @@
+{
+  "name": "Gmail Assistant — Events",
+  "nodes": [
+    {
+      "id": "128299e3-4774-59bc-adad-a0d81b20e290",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        128
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "run"
+            },
+            {
+              "name": "hours"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fede6b77-1cd6-5fc0-8a39-f8f3fd9489f9",
+      "name": "Search Event Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        128
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ parseInt((($('Get Model Setting').all().find(i => i.json && i.json.key === 'eventsMaxEmails') || {}).json || {}).value, 10) || 40 }}",
+        "simple": false,
+        "filters": {
+          "q": "={{ (() => { const s = $('Get Model Setting').all(); const g = k => String(((s.find(i => i.json && i.json.key === k) || { json: {} }).json.value) || ''); let kw = []; try { kw = JSON.parse(g('eventKeywords') || '[]'); } catch (e) { kw = []; } if (!Array.isArray(kw)) kw = []; const words = kw.map(k => String(k).trim()).filter(k => k).map(k => (/[ .]/.test(k) ? '\"' + k + '\"' : k)).join(' '); const addr = $('Get Address Filter').first().json.value; return '-in:draft -in:sent -in:chats {' + (words || 'webinar webinars evento eventi seminario seminari seminar workshop conference conferenza convegno corso corsi course masterclass meetup \"save the date\" iscrizione iscriviti registrazione registration register \"live session\" diretta \"zoom.us\" \"teams.microsoft.com\" \"meet.google.com\"') + '}' + (addr ? ' ' + addr : ''); })() }}",
+          "readStatus": "both",
+          "receivedAfter": "={{ $now.minus({ hours: (parseInt($('Execute Workflow Trigger').first().json.hours, 10) || parseInt((($('Get Model Setting').all().find(i => i.json && i.json.key === 'lookbackEvents') || {}).json || {}).value, 10) || 24) }).toISO() }}"
+        },
+        "options": {}
+      },
+      "webhookId": "6ac3942d-7946-5402-a050-5e010bf2e279",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "5273ba12-f218-58cf-aeb3-3bbba1b0a716",
+      "name": "Skip Already Checked",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        128
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Decisions",
+          "cachedResultName": "Inbox Pilot Decisions"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "gmailId",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "66a7bb51-6654-50db-939d-bcb2d5fe5f6c",
+      "name": "Prepare Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        128
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().map(function (it) {\n  const j = it.json;\n  const fromText = (j.from && j.from.text) || '';\n  const fromAddr = (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || '';\n  let body = (j.text && String(j.text).trim()) || '';\n  if (!body) body = String(j.textAsHtml || j.html || '').replace(/<style[\\s\\S]*?<\\/style>/gi, ' ').replace(/<[^>]+>/g, ' ');\n  body = body.replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 6000);\n  return { json: { gmailId: j.id, threadId: j.threadId, subject: j.subject || '(no subject)', fromText: fromText, fromAddress: fromAddr, receivedAt: j.date || '', body: body } };\n});\n"
+      }
+    },
+    {
+      "id": "9481e4ab-9b7c-52ef-82a6-86a0c67ad9cb",
+      "name": "Extract Event",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        896,
+        128
+      ],
+      "parameters": {
+        "promptType": "define",
+        "hasOutputParser": true,
+        "batching": {},
+        "text": "=Today is {{ $now.setZone('Europe/Rome').toFormat('cccc d LLLL yyyy, HH:mm') }} (Europe/Rome).\n\nDecide whether this email announces, or invites the recipient to, a specific scheduled EVENT they could attend: a webinar, live online session, conference, workshop, seminar, meetup, training course or class with concrete date(s) and start time(s).\n\nNOT an event (isEvent = false):\n- newsletters or promotions with no scheduled session; on-demand or recorded courses with no fixed time\n- calendar-system messages (Google Calendar / Outlook invitations, \"Invitation:\", \"Updated invitation\", \"Accepted:\", \"Declined:\")\n- a person asking to schedule a meeting with the recipient (handled elsewhere)\n- events whose dates have already passed; receipts and confirmations of something already bought, unless they state an upcoming session time\n\nFor an event, list every session with start and end in ISO 8601 with the UTC offset, converted to Europe/Rome. If the email states another time zone, convert from it. If no end time is given, use the stated duration; otherwise assume 60 minutes and say so in notes. A multi-day course gets one session per day (max 10). Never invent a date or time that is not in the email: if the date or start time is missing, set isEvent = false.\n\neventType is one of: webinar, course, conference, workshop, seminar, meetup, event. title is the event's own name, not the email subject. link is the join or registration URL if present. summary is one factual sentence in the email's language.\n\nEmail:\nFrom: {{ $json.fromText }}\nSubject: {{ $json.subject }}\nReceived: {{ $json.receivedAt }}\nBody:\n{{ $json.body }}\n\nRespond with ONLY the JSON object required by the schema."
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "d9a0a3d8-f67f-545b-b26a-fb9fe8270335",
+      "name": "Anthropic Model (events)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        912,
+        352
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ (($('Get Model Setting').all().find(i => i.json.key === 'n8nModel') || { json: {} }).json.value) || 'claude-sonnet-4-6' }}"
+        },
+        "options": {
+          "temperature": 0,
+          "thinkingMode": "={{ (() => { const s = $('Get Model Setting').all(); const g = k => ((s.find(i => i.json.key === k) || { json: {} }).json.value || ''); return g('n8nModel') && ['low', 'medium', 'high'].includes(g('n8nEffort')) ? 'adaptive' : 'disabled'; })() }}",
+          "effort": "={{ (($('Get Model Setting').all().find(i => i.json.key === 'n8nEffort') || { json: {} }).json.value) || 'medium' }}"
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "id": "27bba220-1e60-5903-834e-bc99e836fa2b",
+      "name": "Event Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        352
+      ],
+      "parameters": {
+        "jsonSchemaExample": "{\"isEvent\": true, \"eventType\": \"webinar\", \"title\": \"AI Act for small businesses\", \"sessions\": [{\"start\": \"2026-10-09T15:00:00+02:00\", \"end\": \"2026-10-09T16:00:00+02:00\"}], \"link\": \"https://example.zoom.us/j/123\", \"organizer\": \"Example Academy\", \"location\": \"online\", \"summary\": \"Free webinar on applying the AI Act in small businesses.\", \"notes\": \"\"}"
+      }
+    },
+    {
+      "id": "5986a224-f1c0-533e-b5a0-8028c3415ff3",
+      "name": "Merge Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        128
+      ],
+      "parameters": {
+        "jsCode": "const emails = $('Prepare Email').all();\nconst now = DateTime.now();\nreturn $input.all().map(function (it, i) {\n  const o = it.json.output || {};\n  const e = (emails[i] && emails[i].json) || {};\n  const sessions = [];\n  (Array.isArray(o.sessions) ? o.sessions : []).slice(0, 10).forEach(function (s) {\n    const st = DateTime.fromISO(String((s && s.start) || ''), { setZone: true });\n    if (!st.isValid) return;\n    let en = DateTime.fromISO(String((s && s.end) || ''), { setZone: true });\n    if (!en.isValid || en <= st) en = st.plus({ minutes: 60 });\n    if (en < now) return;\n    sessions.push({ startISO: st.toISO(), endISO: en.toISO() });\n  });\n  return { json: {\n    gmailId: e.gmailId, threadId: e.threadId, subject: e.subject, fromText: e.fromText, fromAddress: e.fromAddress,\n    isEvent: o.isEvent === true && sessions.length > 0, eventType: o.eventType || 'event',\n    title: String(o.title || e.subject || 'Event').slice(0, 200), sessions: sessions,\n    link: o.link || '', organizer: o.organizer || e.fromText || '', location: o.location || '',\n    summary: String(o.summary || '').slice(0, 500), notes: String(o.notes || '').slice(0, 300),\n    recordStatus: it.json.error ? 'llm_error' : (o.isEvent === true ? 'past_or_undated' : 'not_event')\n  }, pairedItem: { item: i } };\n});\n"
+      }
+    },
+    {
+      "id": "2fa8819f-b472-5ef7-9986-1735f17314cd",
+      "name": "Is Schedulable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1472,
+        128
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isEvent }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aff5f4ca-cecc-5122-9f7a-cf865936e9e2",
+      "name": "Detect Conflicts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        48
+      ],
+      "parameters": {
+        "jsCode": "function selfDeclined(e) { return (e.attendees || []).some(function (a) { return a.self && a.responseStatus === 'declined'; }); }\nfunction busyInterval(e) {\n  if (!e || !e.start || e.status === 'cancelled' || selfDeclined(e)) return null;\n  if (e.eventType === 'workingLocation' || e.eventType === 'birthday') return null;\n  if (e.start.dateTime) {\n    if (e.transparency === 'transparent') return null;\n    return { s: DateTime.fromISO(e.start.dateTime), e: DateTime.fromISO(e.end.dateTime), allDay: false };\n  }\n  if (e.start.date) return { s: DateTime.fromISO(e.start.date, { zone: 'Europe/Rome' }).startOf('day'), e: DateTime.fromISO(e.end.date, { zone: 'Europe/Rome' }).startOf('day'), allDay: true };\n  return null;\n}\n\nfunction readBusy(node) {\n  const res = { events: [], ok: true, failed: [], checked: [] };\n  let items = [];\n  try { items = $(node).all(); } catch (e) { res.ok = false; res.failed.push('busy calendars not read'); return res; }\n  if (!items.length) { res.ok = false; res.failed.push('busy calendars returned nothing'); }\n  items.forEach(function (it) {\n    const e = it.json || {};\n    if (e.__summary) { res.checked = e.calendars || []; return; }\n    if (e.__calendarError) { res.ok = false; res.failed.push(e.calendarName || e.calendarId); return; }\n    if (e.error) { res.ok = false; res.failed.push(String((e.error && e.error.message) || e.error)); return; }\n    if (e.start) res.events.push(e);\n  });\n  return res;\n}\n\nconst events = $('Is Schedulable?').all(0);\nconst res = readBusy('Get Busy Events');\nconst calendarOk = res.ok;\nconst cal = [];\nres.events.forEach(function (e) {\n  const b = busyInterval(e);\n  if (!b) return;\n  // A public holiday does not make you unavailable for a webinar; it only matters for meetings.\n  if (b.allDay && String(e.__calendarId || '').indexOf('#holiday@') >= 0) return;\n  cal.push({ b: b, ev: e, calendar: e.__calendarName || e.__calendarId || '' });\n});\nreturn events.map(function (it, i) {\n  const ev = it.json;\n  const conflicts = [];\n  const seen = {};\n  let alreadyInCalendar = false;\n  ev.sessions.forEach(function (s) {\n    const ss = DateTime.fromISO(s.startISO), se = DateTime.fromISO(s.endISO);\n    cal.forEach(function (c) {\n      if (!(ss < c.b.e && se > c.b.s)) return;\n      const sameSlot = !c.b.allDay && Math.abs(c.b.s.diff(ss, 'minutes').minutes) <= 5 && Math.abs(c.b.e.diff(se, 'minutes').minutes) <= 5;\n      if (sameSlot && ev.sessions.length === 1) { alreadyInCalendar = true; return; }\n      if (seen[c.ev.id]) return;\n      seen[c.ev.id] = true;\n      conflicts.push({\n        id: c.ev.id, calendar: c.calendar, summary: c.ev.summary || '(busy)', allDay: c.b.allDay,\n        startISO: c.b.s.toISO(), endISO: c.b.e.toISO(),\n        organizerSelf: !!(c.ev.organizer && c.ev.organizer.self), organizerEmail: (c.ev.organizer && c.ev.organizer.email) || '',\n        attendees: (c.ev.attendees || []).map(function (a) { return { email: a.email, self: !!a.self, resource: !!a.resource }; })\n      });\n    });\n  });\n  return { json: Object.assign({}, ev, {\n    conflicts: conflicts, calendarOk: calendarOk, alreadyInCalendar: alreadyInCalendar,\n    recordStatus: alreadyInCalendar ? 'already_in_calendar' : ev.recordStatus\n  }), pairedItem: { item: i } };\n});\n"
+      }
+    },
+    {
+      "id": "0976b295-6ace-57b5-be56-9d4f7cd2d706",
+      "name": "Needs Decision?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2368,
+        48
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alreadyInCalendar }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "133003c2-8904-51a3-8da7-5882ca572966",
+      "name": "Generate Token",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        2592,
+        0
+      ],
+      "parameters": {
+        "action": "generate",
+        "encodingType": "hex",
+        "stringLength": 40
+      }
+    },
+    {
+      "id": "dadd1773-8992-5217-86a5-ab6f6f3ecf1d",
+      "name": "Build Decision Draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const ZONE = 'Europe/Rome';\nconst URL = 'https://YOUR-N8N-HOST/webhook/mailroom-decide-CHANGE-ME';\nfunction fmtRange(a, b) { const s = DateTime.fromISO(a).setZone(ZONE); const e = DateTime.fromISO(b).setZone(ZONE); return s.toFormat('ccc d LLL yyyy, HH:mm') + '-' + (s.hasSame(e, 'day') ? e.toFormat('HH:mm') : e.toFormat('ccc d LLL HH:mm')); }\nconst TYPE = { webinar: 'Webinar', course: 'Course', conference: 'Conference', workshop: 'Workshop', seminar: 'Seminar', meetup: 'Meetup', event: 'Event' };\nreturn $input.all().map(function (it, i) {\n  const ev = it.json;\n  const token = String(ev.token || ev.data || '');\n  const link = function (a) { return URL + '?t=' + encodeURIComponent(token) + '&a=' + a; };\n  const kind = TYPE[ev.eventType] || 'Event';\n  const first = DateTime.fromISO(ev.sessions[0].startISO).setZone(ZONE);\n  const state = !ev.calendarOk ? 'CHECK' : (ev.conflicts.length ? 'CONFLICT' : 'FREE');\n  const L = [];\n  L.push(kind + ': ' + ev.title);\n  ev.sessions.forEach(function (s, k) { L.push((ev.sessions.length > 1 ? 'Session ' + (k + 1) + ': ' : 'When: ') + fmtRange(s.startISO, s.endISO) + ' (Europe/Rome)'); });\n  if (ev.location || ev.link) L.push('Where: ' + [ev.location, ev.link].filter(Boolean).join(' - '));\n  if (ev.organizer) L.push('From: ' + ev.organizer);\n  if (ev.summary) L.push('', ev.summary);\n  if (ev.notes) L.push('Note: ' + ev.notes);\n  if (ev.threadId) L.push('Original email: https://mail.google.com/mail/u/0/#all/' + ev.threadId);\n  L.push('');\n  if (state === 'FREE') {\n    L.push('YOUR CALENDAR: FREE at ' + (ev.sessions.length > 1 ? 'every session.' : 'this time.'), '');\n    L.push('Add to my calendar:', link('add'), '', 'Ignore it:', link('ignore'));\n  } else if (state === 'CONFLICT') {\n    L.push('YOUR CALENDAR: CONFLICT with');\n    ev.conflicts.forEach(function (c) {\n      const who = (c.attendees || []).filter(function (a) { return !a.self && !a.resource && a.email; }).map(function (a) { return a.email; });\n      L.push('  - ' + c.summary + ' - ' + (c.allDay ? 'all day ' + DateTime.fromISO(c.startISO).setZone(ZONE).toFormat('ccc d LLL') : fmtRange(c.startISO, c.endISO)) + (who.length ? ' (with ' + who.slice(0, 4).join(', ') + (who.length > 4 ? ', ...' : '') + ')' : ''));\n    });\n    L.push('', 'KEEP my existing schedule (do not add this ' + kind.toLowerCase() + '):', link('keep'), '');\n    L.push('SWAP to the new ' + kind.toLowerCase() + ' (add it, and draft reschedule requests for the meetings above):', link('swap'));\n  } else {\n    L.push('YOUR CALENDAR: could not be checked right now.', '');\n    L.push('Add to my calendar anyway:', link('add'), '', 'Ignore it:', link('ignore'));\n  }\n  L.push('', '--', 'Each link opens a confirmation page. Nothing changes until you press Confirm. This note has no recipient and cannot be sent by accident.');\n  const subject = '[Inbox Pilot] ' + state + ' - ' + kind + ': ' + ev.title.slice(0, 80) + ' - ' + first.toFormat('ccc d LLL HH:mm');\n  return { json: Object.assign({}, ev, { token: token, draftSubject: subject, draftBody: L.join('\\n'),\n    sessionsJson: JSON.stringify(ev.sessions), conflictsJson: JSON.stringify(ev.conflicts) }), pairedItem: { item: i } };\n});\n"
+      }
+    },
+    {
+      "id": "c9b112b4-e05e-5c9b-9c95-349906f89169",
+      "name": "Create Decision Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3040,
+        0
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ $json.draftSubject }}",
+        "message": "={{ $json.draftBody }}",
+        "options": {
+          "threadId": "={{ $json.threadId }}"
+        }
+      },
+      "webhookId": "0cfca6c1-cab2-564d-9b60-6fd5cae5a0c1",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "59c8d0ba-4ad0-5511-8405-9c01573e8e33",
+      "name": "Record Decision",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3264,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Decisions",
+          "cachedResultName": "Inbox Pilot Decisions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "kind": "event",
+            "status": "pending",
+            "token": "={{ $('Build Decision Draft').item.json.token }}",
+            "gmailId": "={{ $('Build Decision Draft').item.json.gmailId }}",
+            "threadId": "={{ $('Build Decision Draft').item.json.threadId }}",
+            "title": "={{ $('Build Decision Draft').item.json.title }}",
+            "sessionsJson": "={{ $('Build Decision Draft').item.json.sessionsJson }}",
+            "conflictsJson": "={{ $('Build Decision Draft').item.json.conflictsJson }}",
+            "link": "={{ $('Build Decision Draft').item.json.link }}",
+            "organizer": "={{ $('Build Decision Draft').item.json.organizer }}",
+            "counterpartEmail": "={{ $('Build Decision Draft').item.json.fromAddress }}",
+            "summary": "={{ $('Build Decision Draft').item.json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "kind",
+              "displayName": "kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "token",
+              "displayName": "token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gmailId",
+              "displayName": "gmailId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sessionsJson",
+              "displayName": "sessionsJson",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "conflictsJson",
+              "displayName": "conflictsJson",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "link",
+              "displayName": "link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "organizer",
+              "displayName": "organizer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "counterpartEmail",
+              "displayName": "counterpartEmail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6c99af2a-99f9-5fb0-a72a-9cb9e857ebfd",
+      "name": "Record No Decision",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2592,
+        224
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Decisions",
+          "cachedResultName": "Inbox Pilot Decisions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "kind": "none",
+            "status": "={{ $json.recordStatus || 'not_event' }}",
+            "gmailId": "={{ $json.gmailId }}",
+            "threadId": "={{ $json.threadId }}",
+            "title": "={{ $json.title }}",
+            "summary": "={{ $json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "kind",
+              "displayName": "kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gmailId",
+              "displayName": "gmailId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "threadId",
+              "displayName": "threadId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3dcfd5ae-07a4-5e0a-b000-3305e3a92da3",
+      "name": "Sticky Note 49f769d7",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1568,
+        336
+      ],
+      "parameters": {
+        "content": "## Events, webinars, courses\nDaily: scans the last 24h of the whole inbox (keyword pre-filter), asks Claude whether each email is a scheduled event, and checks the dates against your primary and Meetings calendars (all-day events count as busy).\n\nFor every new event it writes a Gmail **draft with no recipient**: FREE (add / ignore) or CONFLICT (keep / swap). The links go to **Gmail Assistant — Decisions**; nothing changes until you confirm there.\n\nEvery checked email is logged in **Inbox Pilot Decisions**, so it is never checked twice.",
+        "color": 5
+      }
+    },
+    {
+      "id": "cbd7e794-1c42-5efc-8321-bdc96c7f7919",
+      "name": "Get Busy Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1500,
+        200
+      ],
+      "parameters": {
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "Gmail Assistant — Busy Calendars",
+          "mode": "id",
+          "value": "REPLACE_WITH_WORKFLOW_ID__Busy_Calendars"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "days",
+              "id": "days",
+              "required": false,
+              "type": "number"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "extraCalendars",
+              "id": "extraCalendars",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "days": 181,
+            "extraCalendars": ""
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "f603d5c2-ea45-5a10-9219-112358f0dd12",
+      "name": "Get Address Filter",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        320
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Settings",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "key",
+              "keyValue": "addressQuery"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "resource": "row",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "8b247e73-547b-5ad2-9e05-b28d6f0857bb",
+      "name": "Get Model Setting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        168,
+        480
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Settings",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "isNotEmpty",
+              "keyName": "key"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "resource": "row",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Search Event Emails": {
+      "main": [
+        [
+          {
+            "node": "Skip Already Checked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Already Checked": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Extract Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Event": {
+      "main": [
+        [
+          {
+            "node": "Merge Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model (events)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Event",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Event Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract Event",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Extraction": {
+      "main": [
+        [
+          {
+            "node": "Is Schedulable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Schedulable?": {
+      "main": [
+        [
+          {
+            "node": "Get Busy Events",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record No Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Conflicts": {
+      "main": [
+        [
+          {
+            "node": "Needs Decision?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Decision?": {
+      "main": [
+        [
+          {
+            "node": "Generate Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record No Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Token": {
+      "main": [
+        [
+          {
+            "node": "Build Decision Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Decision Draft": {
+      "main": [
+        [
+          {
+            "node": "Create Decision Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Decision Draft": {
+      "main": [
+        [
+          {
+            "node": "Record Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Busy Events": {
+      "main": [
+        [
+          {
+            "node": "Detect Conflicts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Address Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Address Filter": {
+      "main": [
+        [
+          {
+            "node": "Get Model Setting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Model Setting": {
+      "main": [
+        [
+          {
+            "node": "Search Event Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "template": "mailroom",
+    "file": "03-events.json"
+  },
+  "description": "Sub-workflow: finds event/webinar/course emails from the last 24h, checks calendar availability, and drafts a FREE/CONFLICT decision note with add/ignore or keep/swap links."
+}

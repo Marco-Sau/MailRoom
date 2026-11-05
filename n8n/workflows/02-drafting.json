@@ -1,0 +1,1642 @@
+{
+  "name": "Gmail Assistant — Drafting",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "run"
+            },
+            {
+              "name": "hours"
+            }
+          ]
+        }
+      },
+      "id": "4eb1eddc-3211-5cd4-a4a5-9dec72f5291f",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Tracked_Senders",
+          "cachedResultName": "Tracked Senders"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "active",
+              "keyValue": "true"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "e607ae19-85b3-5f3a-9c31-8a689102c8d8",
+      "name": "Get Tracked Senders",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        384
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const st = {};\n$('Get Drafting Settings').all().forEach(function (it) { if (it.json && it.json.key) st[it.json.key] = String(it.json.value == null ? '' : it.json.value); });\nconst scope = st.draftScope === 'inbox' ? 'inbox' : 'senders';\nconst max = Math.min(50, Math.max(1, parseInt(st.maxEmails || '25', 10) || 25));\nconst BASE = '-in:sent -in:draft -in:chats -from:me';\n// 'Your addresses' filter from the Mailroom app (empty = every address is tracked).\nconst ADDR = st.addressQuery ? ' ' + st.addressQuery : '';\nif (scope === 'inbox') {\n  return [{ json: { scope: scope, maxEmails: max, gmailQuery: 'in:inbox ' + BASE +\n    ' -category:promotions -category:social -category:updates -category:forums' +\n    ' -from:noreply -from:no-reply -from:donotreply -from:do-not-reply -from:mailer-daemon -from:notifications -from:newsletter' + ADDR } }];\n}\nconst pats = [];\n$('Get Tracked Senders').all().forEach(function (it) {\n  const j = it.json || {};\n  if (!j.matchPatterns || j.active === false || String(j.active) === 'false') return;\n  String(j.matchPatterns).split(',').forEach(function (p) {\n    p = p.trim().replace(/\"/g, '');\n    if (p && pats.indexOf(p) < 0) pats.push(p);\n  });\n});\nif (!pats.length) return [];\nreturn [{ json: { scope: scope, maxEmails: max,\n  gmailQuery: '{' + pats.map(function (p) { return 'from:\"' + p + '\"'; }).join(' ') + '} ' + BASE + ADDR } }];\n"
+      },
+      "id": "745d43ac-7760-5798-918c-a96905b367eb",
+      "name": "Build Gmail Search Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": "={{ $json.maxEmails || 25 }}",
+        "simple": false,
+        "filters": {
+          "q": "={{ $json.gmailQuery }}",
+          "readStatus": "both",
+          "receivedAfter": "={{ $now.minus({ hours: (parseInt($('Execute Workflow Trigger').first().json.hours, 10) || parseInt((($('Get Drafting Settings').all().find(i => i.json.key === 'lookbackDrafting') || {}).json || {}).value, 10) || 48) }).toISO() }}"
+        },
+        "options": {}
+      },
+      "id": "b5c829a7-eb8d-5b70-852c-1b19cfd7df88",
+      "name": "Search Unprocessed Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        384
+      ],
+      "webhookId": "a78d81f4-427a-59ae-a480-1282d86168d6",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Processed_Sender_Emails",
+          "cachedResultName": "Processed Sender Emails"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "gte",
+              "keyValue": "0"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "31a4082a-fc9b-5fa5-ba47-5356ae0f126a",
+      "name": "Check Pending Proposal",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        384
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = $('Filter Already-Drafted').all();\nlet rows = [];\ntry { rows = $('Check Pending Proposal').all().map(function (it) { return it.json; }); } catch (e) { rows = []; }\nlet senders = [];\ntry { senders = $('Get Tracked Senders').all().map(function (it) { return it.json; }).filter(function (s) { return s && s.matchPatterns; }); } catch (e) { senders = []; }\nconst st = {};\ntry { $('Get Drafting Settings').all().forEach(function (it) { if (it.json && it.json.key) st[it.json.key] = String(it.json.value == null ? '' : it.json.value); }); } catch (e) { /* defaults */ }\nconst signer = st.signatureName || 'Alex Doe';\nfunction senderFor(email) {\n  const from = String((email.from && email.from.text) || '').toLowerCase();\n  for (let k = 0; k < senders.length; k++) {\n    const pats = String(senders[k].matchPatterns || '').split(',').map(function (p) { return p.trim().toLowerCase(); }).filter(Boolean);\n    if (pats.some(function (p) { return from.indexOf(p) >= 0; })) return senders[k];\n  }\n  return null;\n}\nfunction stamp(r) { return String(r.processedAt || r.createdAt || ''); }\nreturn emails.map(function (it, i) {\n  const email = it.json;\n  const pending = rows.filter(function (r) { return r.threadId && r.threadId === email.threadId && r.proposalStatus === 'pending'; })\n    .sort(function (a, b) { return stamp(b).localeCompare(stamp(a)); });\n  let slots = [];\n  if (pending.length) { try { slots = JSON.parse(pending[0].proposedSlotsJson || '[]') || []; } catch (e) { slots = []; } }\n  const hasPending = slots.length > 0;\n  const s = senderFor(email);\n  return { json: Object.assign({}, email, {\n    hasPendingProposal: hasPending,\n    pendingSlotsText: slots.map(function (x) { return x && x.label; }).filter(Boolean).join('; '),\n    pendingSlotsParsed: slots,\n    proposalStatus: hasPending ? 'pending' : '',\n    senderName: signer,\n    senderNotes: (s && s.notes) || st.defaultNotes || '',\n    contactName: (s && s.senderName) || '',\n    draftScope: st.draftScope === 'inbox' ? 'inbox' : 'senders',\n    senderCategory: (s && s.category) || st.defaultCategory || 'career',\n    senderCalendarId: (s && s.calendarId) || ''\n  }), pairedItem: { item: 0 } };\n});\n"
+      },
+      "id": "6d703e58-7fed-5452-bbd4-e53c951bf7fc",
+      "name": "Attach Pending Proposal Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Today is {{ $now.setZone('Europe/Rome').toFormat('cccc d LLLL yyyy') }} (Europe/Rome).\n\nYou are drafting an email reply on behalf of {{ $json.senderName }}, who received the email below.\n\n{{ $json.contactName ? (\"The sender is a known contact: \" + $json.contactName + \".\\n\\n\") : \"\" }}Instructions for this sender: {{ $json.senderNotes || \"(none)\" }}\n\nOriginal email:\nFrom: {{ $json.from && $json.from.text ? $json.from.text : \"unknown\" }}\nSubject: {{ $json.subject || \"(no subject)\" }}\nBody:\n{{ $json.text && $json.text.trim().length ? $json.text : ($json.textAsHtml || $json.html || \"(no body available)\") }}\n\n{{ $json.hasPendingProposal ? (\"PENDING PROPOSAL CONTEXT: In a previous email on this thread, the following meeting time slots were already proposed to this sender: \" + $json.pendingSlotsText + \". Check carefully whether THIS reply clearly confirms ONE of these specific slots.\") : \"\" }}\n\nSTEP 1 -- CONFIRMATION CHECK: {{ $json.hasPendingProposal ? \"Determine whether this reply clearly confirms one of the previously proposed slots listed above. If yes, set isConfirmingProposal to true and set confirmedSlotIndex to the zero-based index of the confirmed slot in that list (0 for the first slot listed, 1 for the second, etc). If the reply does not clearly confirm one specific slot from that list (for example if it declines, asks a question, or proposes a different time instead), set isConfirmingProposal to false and confirmedSlotIndex to -1.\" : \"There is no pending proposal on this thread. Always set isConfirmingProposal to false and confirmedSlotIndex to -1.\" }}\n\nSTEP 2 -- CLASSIFY: If isConfirmingProposal is false, determine whether this email is a genuine, active request from a person asking to schedule an appointment, meeting, or call (this includes proposing a different time than one previously offered). Set isAppointmentRequest to true only for that case. Set it to false for automated calendar system notifications (invitation accepted/declined/updated, reminders), newsletters, webinar or event announcements, receipts, and any email that is not itself asking to schedule time with the recipient. If isConfirmingProposal is true, set isAppointmentRequest to false.\n\nSTEP 3 -- TIMEFRAME (only when isAppointmentRequest is true; otherwise use the empty defaults): requestedTimeframeHint is a short phrase quoting the preferred timeframe, or an empty string. preferredStartDate and preferredEndDate are the first and last acceptable days as YYYY-MM-DD, resolving relative expressions such as \"next week\" or \"Friday\" against today's date; use empty strings if no timeframe is given. preferredPartOfDay is \"morning\", \"afternoon\" or \"any\". durationMinutes is the requested meeting length in minutes, or 0 if not stated.\n\nSTEP 4 -- DRAFT:\n- If isConfirmingProposal is true: write a short, warm reply in draftReply that confirms the specific agreed time. Do not say the meeting is already in the calendar and do not mention a calendar invitation. Reply in the same language as the original email. Sign off as {{ $json.senderName.split(\" \")[0] }}.\n- Else if isAppointmentRequest is false: first decide needsReply. needsReply is true only when a person expects an answer from the recipient (a question, a request, a personal invitation, something to confirm). It is false for newsletters, notifications, receipts, automated or bulk messages, messages where the recipient is only in copy with nothing asked, and short closings such as thanks or acknowledgements. If needsReply is false, set draftReply to an empty string. Otherwise write a complete, natural, ready-to-send reply in draftReply. Address the actual content of the email specifically -- do not write a generic acknowledgment. Reply in the same language the original email was written in. Follow the sender-specific instructions above if any are given. Sign off as {{ $json.senderName.split(\" \")[0] }}.\n- Else (a brand new appointment request with no confirmed slot yet): set draftReply to an empty string -- a later step drafts that reply once calendar availability is known.\n\nSTEP 5 -- EARLIER ITEMS: set refersToEarlier to true when the email asks about, or refers to, something the sender sent before: a document, file, attachment, link or earlier email (for example \"did you read the document I sent you?\" or \"as per the file attached last week\"). Then set referenceDescription to a short phrase naming it, and referenceKeywords to 1-5 distinctive words likely to appear in its file name or in the subject of the email that carried it. Otherwise set refersToEarlier to false, referenceDescription to an empty string and referenceKeywords to an empty list.\n\nRespond with ONLY the JSON object matching the required schema. No explanation, no markdown code fences, no text before or after the JSON.",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "244b17f2-8eae-5470-a149-93ffc4c89927",
+      "name": "Classify & Draft Reply",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1568,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ ($('Get Drafting Settings').all().find(i => i.json.key === 'n8nModel') || { json: {} }).json.value || 'claude-sonnet-4-6' }}"
+        },
+        "options": {
+          "temperature": 0.2,
+          "thinkingMode": "={{ (() => { const s = $('Get Drafting Settings').all(); const g = k => ((s.find(i => i.json.key === k) || { json: {} }).json.value || ''); return g('n8nModel') && ['low', 'medium', 'high'].includes(g('n8nEffort')) ? 'adaptive' : 'disabled'; })() }}",
+          "effort": "={{ (($('Get Drafting Settings').all().find(i => i.json.key === 'n8nEffort') || { json: {} }).json.value) || 'medium' }}"
+        }
+      },
+      "id": "b9460c4c-d5ae-5282-acc6-79481cb6235c",
+      "name": "Anthropic Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        3336,
+        296
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\"isAppointmentRequest\": false, \"requestedTimeframeHint\": \"\", \"preferredStartDate\": \"\", \"preferredEndDate\": \"\", \"preferredPartOfDay\": \"any\", \"durationMinutes\": 0, \"needsReply\": true, \"draftReply\": \"Hi, thanks for your email -- I will follow up shortly.\", \"isConfirmingProposal\": false, \"confirmedSlotIndex\": -1, \"refersToEarlier\": false, \"referenceDescription\": \"\", \"referenceKeywords\": [\"budget\"]}"
+      },
+      "id": "c0da8b21-60c2-5181-a17c-5f5a01a1764f",
+      "name": "Classification Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1640,
+        616
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const classifyItems = $input.all();\nlet emailItems = [];\ntry {\n  emailItems = $(\"Attach Pending Proposal Context\").all();\n} catch (e) {\n  emailItems = [];\n}\nconst results = [];\nfor (let i = 0; i < classifyItems.length; i++) {\n  const classifyJson = classifyItems[i].json;\n  const emailJson = (emailItems[i] && emailItems[i].json) ? emailItems[i].json : {};\n  const merged = Object.assign({}, emailJson, {\n    output: classifyJson.output\n  });\n  results.push({ json: merged, pairedItem: { item: i } });\n}\nreturn results;"
+      },
+      "id": "34153724-aae2-504f-84ad-0e51f037ee72",
+      "name": "Merge Classification With Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.output.isConfirmingProposal }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "eff87a48-fc20-5db4-a4c2-1ee55762e950",
+      "name": "Is Confirming Proposal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2144,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.output.isAppointmentRequest }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f082c8a2-c2db-5004-a337-d2e3693856c9",
+      "name": "Is Appointment Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2368,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const confirmedIndex = ($json.output && typeof $json.output.confirmedSlotIndex === \"number\") ? $json.output.confirmedSlotIndex : -1;\nconst slots = $json.pendingSlotsParsed || [];\nconst chosen = (confirmedIndex >= 0 && confirmedIndex < slots.length) ? slots[confirmedIndex] : null;\nconst startISO = chosen ? chosen.startISO : \"\";\nconst endISO = chosen ? chosen.endISO : \"\";\nconst label = chosen ? chosen.label : \"\";\nreturn { json: Object.assign({}, $json, { startISO: startISO, endISO: endISO, label: label }) };"
+      },
+      "id": "94a5a191-f96d-51e9-be2b-f8a91e5f4d19",
+      "name": "Extract Confirmed Slot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.startISO }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f8ef1c-74d8-54d3-8f49-7a4abae3ab62",
+      "name": "Has Valid Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3040,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function selfDeclined(e) { return (e.attendees || []).some(function (a) { return a.self && a.responseStatus === 'declined'; }); }\nfunction busyInterval(e) {\n  if (!e || !e.start || e.status === 'cancelled' || selfDeclined(e)) return null;\n  if (e.eventType === 'workingLocation' || e.eventType === 'birthday') return null;\n  if (e.start.dateTime) {\n    if (e.transparency === 'transparent') return null;\n    return { s: DateTime.fromISO(e.start.dateTime), e: DateTime.fromISO(e.end.dateTime), allDay: false };\n  }\n  if (e.start.date) return { s: DateTime.fromISO(e.start.date, { zone: 'Europe/Rome' }).startOf('day'), e: DateTime.fromISO(e.end.date, { zone: 'Europe/Rome' }).startOf('day'), allDay: true };\n  return null;\n}\nfunction parseJ(s, f) { try { const v = JSON.parse(s); return v == null ? f : v; } catch (e) { return f; } }\n\nfunction readSettings(node) {\n  const st = {};\n  try { $(node).all().forEach(function (it) { if (it.json && it.json.key) st[it.json.key] = String(it.json.value == null ? '' : it.json.value); }); } catch (e) { /* defaults */ }\n  return st;\n}\n\nfunction readBusy(node) {\n  const res = { events: [], ok: true, failed: [], checked: [] };\n  let items = [];\n  try { items = $(node).all(); } catch (e) { res.ok = false; res.failed.push('busy calendars not read'); return res; }\n  if (!items.length) { res.ok = false; res.failed.push('busy calendars returned nothing'); }\n  items.forEach(function (it) {\n    const e = it.json || {};\n    if (e.__summary) { res.checked = e.calendars || []; return; }\n    if (e.__calendarError) { res.ok = false; res.failed.push(e.calendarName || e.calendarId); return; }\n    if (e.error) { res.ok = false; res.failed.push(String((e.error && e.error.message) || e.error)); return; }\n    if (e.start) res.events.push(e);\n  });\n  return res;\n}\n\nconst ZONE = 'Europe/Rome';\nconst now = DateTime.now().setZone(ZONE);\nconst reqs = $('Is Appointment Request?').all(0);\nconst st = readSettings('Get Drafting Settings');\nconst HOURS = {\n  fulltime: parseJ(st.workHours, {}),\n  career: parseJ(st.careerHours, {}),\n  anytime: parseJ(st.anytimeHours, {})\n};\nconst LABEL = { fulltime: 'full-time job', career: 'professional career', anytime: 'any time' };\n\n// 1. Busy time from every busy calendar (+ each sender's own calendar).\n//    Long events in the work calendar are presence blocks (\"at work\"): they block every\n//    category except full-time-job senders, whose meetings are placed inside them.\nconst WORK_CAL = st.workCalendar || '';\nconst PRESENCE_MIN = (Number(st.presenceMinHours) || 4) * 60;\nconst cal = readBusy('Get Busy Events');\nconst calendarOk = cal.ok;\nconst busy = [];\nconst presence = [];\ncal.events.forEach(function (e) {\n  const b = busyInterval(e);\n  if (!b) return;\n  const isPresence = WORK_CAL && e.__calendarId === WORK_CAL && !b.allDay && b.e.diff(b.s, 'minutes').minutes >= PRESENCE_MIN;\n  if (isPresence) presence.push({ s: b.s, e: b.e });\n  busy.push({ s: b.s, e: b.e, thread: '', presence: !!isPresence });\n});\n\n// 2. Slots already offered to other people in the last 7 days and not yet answered are held.\nlet rows = [];\ntry { rows = $('Check Pending Proposal').all().map(function (it) { return it.json; }); } catch (e) { rows = []; }\nfunction when(v) {\n  if (v instanceof Date) return DateTime.fromJSDate(v);\n  const d = DateTime.fromISO(String(v || ''));\n  return d.isValid ? d : null;\n}\nrows.forEach(function (r) {\n  if (r.proposalStatus !== 'pending') return;\n  const t = when(r.processedAt || r.createdAt);\n  if (t && t < now.minus({ days: 7 })) return;\n  let slots = [];\n  try { slots = JSON.parse(r.proposedSlotsJson || '[]') || []; } catch (e) { slots = []; }\n  slots.forEach(function (x) {\n    const s = DateTime.fromISO(String((x && x.startISO) || '')), e = DateTime.fromISO(String((x && x.endISO) || ''));\n    if (s.isValid && e.isValid) busy.push({ s: s, e: e, thread: r.threadId || '' });\n  });\n});\n\n// 3. Allowed windows per category, in minutes from midnight.\nfunction mins(hhmm) { const p = String(hhmm).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }\nfunction ranges(table, wd) { return ((table || {})[String(wd)] || []).map(function (r) { return [mins(r[0]), mins(r[1])]; }).filter(function (r) { return r[1] > r[0]; }); }\nfunction subtract(rs, cuts) {\n  cuts.forEach(function (w) {\n    const next = [];\n    rs.forEach(function (r) {\n      if (w[1] <= r[0] || w[0] >= r[1]) { next.push(r); return; }\n      if (w[0] > r[0]) next.push([r[0], w[0]]);\n      if (w[1] < r[1]) next.push([w[1], r[1]]);\n    });\n    rs = next;\n  });\n  return rs;\n}\nfunction clip(rs, a, b) { return rs.map(function (r) { return [Math.max(r[0], a), Math.min(r[1], b)]; }).filter(function (r) { return r[1] > r[0]; }); }\nfunction presenceRanges(day) {\n  // Presence blocks that day, never earlier than the day's first fixed work hour (commute).\n  const fixed = ranges(HOURS.fulltime, day.weekday);\n  const floor = fixed.length ? Math.min.apply(null, fixed.map(function (r) { return r[0]; })) : 7 * 60 + 30;\n  const d0 = day.startOf('day');\n  return presence.filter(function (p) { return p.s < d0.plus({ days: 1 }) && p.e > d0; }).map(function (p) {\n    const a = Math.max(0, Math.round(p.s.setZone(ZONE).diff(d0, 'minutes').minutes));\n    const b = Math.min(24 * 60, Math.round(p.e.setZone(ZONE).diff(d0, 'minutes').minutes));\n    return [Math.max(a, floor), b];\n  }).filter(function (r) { return r[1] > r[0]; });\n}\nfunction windowsFor(category, day, part) {\n  let rs;\n  if (category === 'fulltime') {\n    rs = presenceRanges(day);                                     // real shifts when the calendar has them\n    if (!rs.length) rs = ranges(HOURS.fulltime, day.weekday);     // otherwise the fixed work hours\n  } else {\n    rs = ranges(HOURS[category] || HOURS.career, day.weekday);\n  }\n  if (category === 'career') rs = subtract(rs, ranges(HOURS.fulltime, day.weekday));   // never during work hours\n  if (part === 'morning') rs = clip(rs, 0, 13 * 60);\n  if (part === 'afternoon') rs = clip(rs, 13 * 60, 24 * 60);\n  return rs.sort(function (a, b) { return a[0] - b[0]; });\n}\nfunction isFree(s, e, thread, category) {\n  return !busy.some(function (b) {\n    if (b.presence && category === 'fulltime') return false;\n    return (!b.thread || b.thread !== thread) && s < b.e && e > b.s;\n  });\n}\nfunction earliest() {\n  let t = now.plus({ hours: 2 });\n  t = t.minute === 0 ? t.startOf('hour') : (t.minute <= 30 ? t.set({ minute: 30, second: 0, millisecond: 0 }) : t.plus({ hours: 1 }).startOf('hour'));\n  return t;\n}\nfunction search(from, to, category, part, dur, thread, max, perDay) {\n  // perDay = 1 spreads the offer over different days; alternate days start mid-window\n  // so that not every proposal is at the start of the window.\n  const out = [];\n  let day = from.startOf('day');\n  let k = 0;\n  while (day <= to && out.length < max) {\n    const rs = windowsFor(category, day, part);\n    let starts = [];\n    rs.forEach(function (r) { for (let m = r[0]; m + dur <= r[1]; m += 30) starts.push([m, r[1]]); });\n    if (k % 2 === 1 && starts.length > 2) {\n      const mid = Math.floor(starts.length / 2);\n      starts = starts.slice(mid).concat(starts.slice(0, mid));\n    }\n    const today = [];\n    for (let q = 0; q < starts.length && today.length < perDay && out.length + today.length < max; q++) {\n      const s = day.plus({ minutes: starts[q][0] });\n      const e = s.plus({ minutes: dur });\n      const spaced = today.every(function (x) { return s >= x.e.plus({ minutes: 60 }) || e <= x.s.minus({ minutes: 60 }); });\n      if (s >= from && e <= to.endOf('day') && spaced && isFree(s, e, thread, category)) today.push({ s: s, e: e });\n    }\n    if (today.length) { today.sort(function (a, b) { return a.s - b.s; }); Array.prototype.push.apply(out, today); k++; }\n    day = day.plus({ days: 1 });\n  }\n  return out;\n}\n\nconst results = reqs.map(function (it) {\n  const base = it.json || {};\n  const o = base.output || {};\n  const category = HOURS[base.senderCategory] ? base.senderCategory : (HOURS[st.defaultCategory] ? st.defaultCategory : 'career');\n  let dur = Number(o.durationMinutes) || 30;\n  dur = Math.min(180, Math.max(15, Math.ceil(dur / 15) * 15));\n  const part = ['morning', 'afternoon'].indexOf(o.preferredPartOfDay) >= 0 ? o.preferredPartOfDay : 'any';\n  const min = earliest();\n  const ps = DateTime.fromISO(String(o.preferredStartDate || ''), { zone: ZONE });\n  const pe = DateTime.fromISO(String(o.preferredEndDate || ''), { zone: ZONE });\n  let from = ps.isValid && ps.startOf('day') > min ? ps.startOf('day') : min;\n  if (from > now.plus({ days: 60 })) from = min;\n  let to = pe.isValid && pe >= from.startOf('day') ? pe.endOf('day') : from.plus({ days: 14 }).endOf('day');\n  if (to > now.plus({ days: 75 })) to = now.plus({ days: 75 }).endOf('day');\n  const hinted = ps.isValid || pe.isValid || part !== 'any';\n\n  let found = [];\n  let relaxed = false;\n  // Widen step by step, always keeping what was already found inside the request.\n  function merge(more) {\n    more.forEach(function (f) {\n      if (found.length >= 3) return;\n      const clash = found.some(function (x) { return f.s < x.e.plus({ minutes: 60 }) && f.e > x.s.minus({ minutes: 60 }); });\n      if (!clash) found.push(f);\n    });\n    found.sort(function (a, b) { return a.s - b.s; });\n  }\n  if (calendarOk) {\n    found = search(from, to, category, part, dur, base.threadId, 3, 1);\n    if (found.length < 2) merge(search(from, to, category, part, dur, base.threadId, 3, 3));\n    if (found.length < 2 && part !== 'any') merge(search(from, to, category, 'any', dur, base.threadId, 3, 3));\n    if (found.length < 2) merge(search(min, min.plus({ days: 14 }).endOf('day'), category, 'any', dur, base.threadId, 3, 1));\n  }\n  // Flag only when at least one offered time is actually outside what was asked.\n  relaxed = hinted && found.some(function (f) {\n    const h = f.s.setZone(ZONE).hour;\n    return f.s < from || f.e > to.endOf('day') || (part === 'morning' && h >= 13) || (part === 'afternoon' && h < 13);\n  });\n  found.forEach(function (f) { busy.push({ s: f.s, e: f.e, thread: '' }); }); // never offer the same slot twice in one run\n  const freeSlots = found.map(function (f) {\n    return { startISO: f.s.toISO(), endISO: f.e.toISO(), label: f.s.toFormat('cccc d LLLL, HH:mm') + '-' + f.e.toFormat('HH:mm') };\n  });\n  let text;\n  if (!calendarOk) text = '(Calendar temporarily unavailable -- could not confirm free slots right now.)';\n  else if (!freeSlots.length) text = 'No free slots found in the next two weeks.';\n  else text = freeSlots.map(function (s) { return s.label; }).join('; ');\n  return { json: Object.assign({}, base, { freeSlots: freeSlots, freeSlotsText: text, slotsRelaxed: relaxed,\n    meetingMinutes: dur, calendarOk: calendarOk, schedulingCategory: category, schedulingCategoryLabel: LABEL[category],\n    calendarsChecked: cal.checked, calendarsFailed: cal.failed }), pairedItem: { item: 0 } };\n});\nreturn results;\n"
+      },
+      "id": "75c589d5-2bf5-585e-b297-1cf9d38bee2a",
+      "name": "Compute Free Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Today is {{ $now.setZone('Europe/Rome').toFormat('cccc d LLLL yyyy') }} (Europe/Rome).\n\nYou are drafting an email reply on behalf of {{ $json.senderName }}, replying to an email that requested an appointment.\n\nSender-specific instructions: {{ $json.senderNotes || \"(none)\" }}\n\nOriginal email:\nFrom: {{ $json.from && $json.from.text ? $json.from.text : \"unknown\" }}\nSubject: {{ $json.subject || \"(no subject)\" }}\nBody:\n{{ $json.text && $json.text.trim().length ? $json.text : ($json.textAsHtml || $json.html || \"(no body available)\") }}\n\nRequested timeframe, if mentioned by the sender: {{ ($json.output && $json.output.requestedTimeframeHint) || \"(not specified)\" }}\n{{ $json.slotsRelaxed ? \"Not enough time was free in the requested timeframe, so at least one of the times below is outside it. Say so briefly and politely.\" : \"\" }}\n\nTime slots checked free on the calendar (Europe/Rome time, {{ $json.meetingMinutes || 30 }} minutes each):\n{{ $json.freeSlotsText }}\n\nWrite a complete, natural, ready-to-send reply that offers ALL of the listed slots, in the order given, and asks the sender to confirm one. Do not invent any other times. Translate weekday and month names into the language of the reply. If no slots are listed, apologize and say you will follow up with availability shortly instead of inventing times. Reply in the same language as the original email. Follow the sender-specific instructions above if any are given. Sign off as {{ $json.senderName.split(\" \")[0] }}.\n\nRespond with ONLY the reply text -- no subject line, no explanation, no markdown formatting.",
+        "batching": {}
+      },
+      "id": "0c01c930-76e1-5143-b8ab-35790cdee81a",
+      "name": "Draft Appointment Reply",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        3264,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let classifyOutput = {};\nlet orig = {};\nif ($json && $json.output) {\n  classifyOutput = $json.output;\n  orig = $json;\n} else {\n  try {\n    orig = $('Compute Free Slots').item.json;\n    classifyOutput = orig.output || { isAppointmentRequest: true, isConfirmingProposal: false };\n  } catch (e) {\n    try {\n      orig = $('Extract Confirmed Slot').item.json;\n      classifyOutput = orig.output || { isAppointmentRequest: false, isConfirmingProposal: true };\n    } catch (e2) {\n      orig = {};\n      classifyOutput = {};\n    }\n  }\n}\nconst isAppt = classifyOutput.isAppointmentRequest === true;\nconst isConfirming = classifyOutput.isConfirmingProposal === true;\n\nlet apptLlmText = '';\ntry {\n  const apptItem = $('Draft Appointment Reply').item;\n  apptLlmText = (apptItem && typeof apptItem.json.text === 'string') ? apptItem.json.text.trim() : '';\n} catch (e) {\n  apptLlmText = '';\n}\nconst replyText = apptLlmText.length ? apptLlmText : ((classifyOutput.draftReply || '').trim());\nconst rawSubject = orig.subject || '(no subject)';\nconst draftSubject = /^re:/i.test(rawSubject) ? rawSubject : ('Re: ' + rawSubject);\nconst fromObj = orig.from || {};\nconst fromValues = fromObj.value || [];\nconst sendTo = (fromValues[0] && fromValues[0].address) || fromObj.text || '';\nconst finalBody = replyText.length ? replyText : '(No reply generated)';\n\nconst skipDraft = !isAppt && !isConfirming && classifyOutput.needsReply === false;\nlet proposalStatus = skipDraft ? 'no_reply_needed' : 'none';\nlet proposedSlotsJson = '';\nif (isConfirming) {\n  // The booking itself waits for Alex's BOOK / DO NOT BOOK choice (Gmail Assistant - Decisions).\n  proposalStatus = orig.startISO ? 'awaiting_approval' : 'none';\n} else if (isAppt && (orig.freeSlots || []).length) {\n  proposalStatus = 'pending';\n  proposedSlotsJson = JSON.stringify(orig.freeSlots);\n}\nreturn { json: { draftSubject: draftSubject, draftBody: finalBody, threadId: orig.threadId, sendTo: sendTo, originalMessageId: orig.id,\n  isAppointmentRequest: isAppt, proposalStatus: proposalStatus, proposedSlotsJson: proposedSlotsJson, meetingEventId: '',\n  skipDraft: skipDraft } };\n"
+      },
+      "id": "4ed47b4a-ac3f-58a1-bdbc-01041b9cfb7b",
+      "name": "Normalize Draft Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4048,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ $json.draftSubject }}",
+        "message": "={{ $json.draftBody }}",
+        "options": {
+          "threadId": "={{ $json.threadId }}",
+          "sendTo": "={{ $json.sendTo }}"
+        }
+      },
+      "id": "ab2e23ce-edc2-53f9-8b88-9a6eff2b75d4",
+      "name": "Create Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4496,
+        400
+      ],
+      "webhookId": "9396d65d-ee5e-58f8-aa65-68cb81fb8d07",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Processed_Sender_Emails",
+          "cachedResultName": "Processed Sender Emails"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "trackedGmailId": "={{ $(\"Normalize Draft Fields\").item.json.originalMessageId }}",
+            "processedAt": "={{ $now.toISO() }}",
+            "threadId": "={{ $(\"Normalize Draft Fields\").item.json.threadId }}",
+            "proposedSlotsJson": "={{ $(\"Normalize Draft Fields\").item.json.proposedSlotsJson }}",
+            "proposalStatus": "={{ $(\"Normalize Draft Fields\").item.json.proposalStatus }}",
+            "meetingEventId": "={{ $(\"Normalize Draft Fields\").item.json.meetingEventId }}",
+            "draftStatus": "={{ $(\"Normalize Draft Fields\").item.json.skipDraft ? '' : 'ready' }}"
+          },
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "trackedGmailId",
+              "id": "trackedGmailId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "processedAt",
+              "id": "processedAt",
+              "required": false,
+              "type": "date"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "threadId",
+              "id": "threadId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "proposedSlotsJson",
+              "id": "proposedSlotsJson",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "proposalStatus",
+              "id": "proposalStatus",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "meetingEventId",
+              "id": "meetingEventId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "draftStatus",
+              "id": "draftStatus",
+              "required": false,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0959c6d-c416-57af-b0fa-46e599314857",
+      "name": "Mark Email As Processed",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Sender whitelist\nTo add or remove a sender this system watches and drafts replies for, edit the **Tracked Senders** data table (used by the node below).\n\nColumns:\n- matchPatterns: sender email(s), comma-separated for aliases\n- senderName: display name used in the signature/prompt\n- active: true/false (set false to pause without deleting)\n- notes: tone/language instructions for the draft",
+        "height": 260,
+        "width": 320,
+        "color": 5
+      },
+      "id": "041ee074-1b3f-5c0b-8b1e-df9bc86e4236",
+      "name": "Sender Whitelist Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        176,
+        208
+      ]
+    },
+    {
+      "id": "52a07723-23f2-5ed3-9011-4f7e24af2496",
+      "name": "Generate Booking Token",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        3264,
+        720
+      ],
+      "parameters": {
+        "action": "generate",
+        "encodingType": "hex",
+        "stringLength": 40
+      }
+    },
+    {
+      "id": "c6c9621c-52ec-579e-8139-7e8e0fd58218",
+      "name": "Build Booking Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3488,
+        720
+      ],
+      "parameters": {
+        "jsCode": "function parseJ(s, f) { try { const v = JSON.parse(s); return v == null ? f : v; } catch (e) { return f; } }\n\nfunction readSettings(node) {\n  const st = {};\n  try { $(node).all().forEach(function (it) { if (it.json && it.json.key) st[it.json.key] = String(it.json.value == null ? '' : it.json.value); }); } catch (e) { /* defaults */ }\n  return st;\n}\n\nconst ZONE = 'Europe/Rome';\nconst URL = 'https://YOUR-N8N-HOST/webhook/mailroom-decide-CHANGE-ME';\nconst st = readSettings('Get Drafting Settings');\nconst names = {};\nparseJ(st.calendars, []).forEach(function (c) { if (c && c.id) names[c.id] = c.name || c.id; });\nconst bookingCals = parseJ(st.bookingCalendars, {});\nreturn $input.all().map(function (it, i) {\n  const j = it.json;\n  const token = String(j.data || j.token || '');\n  const link = function (a) { return URL + '?t=' + encodeURIComponent(token) + '&a=' + a; };\n  const from = j.from || {};\n  const addr = (from.value && from.value[0] && from.value[0].address) || '';\n  const name = (from.value && from.value[0] && from.value[0].name) || addr || 'contact';\n  const category = j.senderCategory || st.defaultCategory || 'career';\n  const calendarId = j.senderCalendarId || bookingCals[category] || 'primary';\n  const calendarName = names[calendarId] || (calendarId === 'primary' ? 'Primary' : calendarId);\n  const s = DateTime.fromISO(j.startISO).setZone(ZONE), e = DateTime.fromISO(j.endISO).setZone(ZONE);\n  const whenText = s.toFormat('cccc d LLLL yyyy, HH:mm') + '-' + e.toFormat('HH:mm') + ' (Europe/Rome)';\n  const title = 'Meeting with ' + name;\n  const L = [\n    name + (addr && addr !== name ? ' <' + addr + '>' : '') + ' confirmed one of the times you proposed:',\n    '', '  ' + whenText, '',\n    'Subject: ' + (j.subject || '(no subject)'),\n    'Original email: https://mail.google.com/mail/u/0/#all/' + j.threadId,\n    '', 'Your confirmation reply is already in Drafts on that thread (not sent).', '',\n    'BOOK it in my \"' + calendarName + '\" calendar:', link('book'), '',\n    'Do NOT book it (releases the proposed slots):', link('decline'),\n    '', '--', 'Each link opens a confirmation page. Nothing changes until you press Confirm. This note has no recipient and cannot be sent by accident.'\n  ];\n  return { json: {\n    token: token, gmailId: j.id, threadId: j.threadId, title: title, counterpartEmail: addr,\n    sessionsJson: JSON.stringify([{ startISO: j.startISO, endISO: j.endISO }]),\n    summary: 'Confirmed by email: ' + (j.subject || ''),\n    calendarId: calendarId, calendarName: calendarName,\n    draftSubject: '[Inbox Pilot] BOOK? - ' + title + ' - ' + s.toFormat('ccc d LLL HH:mm'),\n    draftBody: L.join('\\n')\n  }, pairedItem: { item: i } };\n});\n"
+      }
+    },
+    {
+      "id": "c1534dc8-77cf-56bb-a4b2-b6c352a597b9",
+      "name": "Create Approval Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3712,
+        720
+      ],
+      "parameters": {
+        "message": "={{ $json.draftBody }}",
+        "options": {
+          "threadId": "={{ $json.threadId }}"
+        },
+        "resource": "draft",
+        "subject": "={{ $json.draftSubject }}"
+      },
+      "webhookId": "ac3b695e-7dbe-5332-b89e-9fb810bfde73",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "bbd4dcfd-6695-58d2-8904-9b97f4911935",
+      "name": "Record Booking Decision",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3936,
+        720
+      ],
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "kind",
+              "id": "kind",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "status",
+              "id": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "conflictsJson",
+              "id": "conflictsJson",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "token",
+              "id": "token",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "gmailId",
+              "id": "gmailId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "threadId",
+              "id": "threadId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "title",
+              "id": "title",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "sessionsJson",
+              "id": "sessionsJson",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "counterpartEmail",
+              "id": "counterpartEmail",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "summary",
+              "id": "summary",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "calendarId",
+              "id": "calendarId",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "calendarName",
+              "id": "calendarName",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "calendarId": "={{ $('Build Booking Approval').item.json.calendarId }}",
+            "calendarName": "={{ $('Build Booking Approval').item.json.calendarName }}",
+            "conflictsJson": "[]",
+            "counterpartEmail": "={{ $('Build Booking Approval').item.json.counterpartEmail }}",
+            "gmailId": "={{ $('Build Booking Approval').item.json.gmailId }}",
+            "kind": "meeting",
+            "sessionsJson": "={{ $('Build Booking Approval').item.json.sessionsJson }}",
+            "status": "pending",
+            "summary": "={{ $('Build Booking Approval').item.json.summary }}",
+            "threadId": "={{ $('Build Booking Approval').item.json.threadId }}",
+            "title": "={{ $('Build Booking Approval').item.json.title }}",
+            "token": "={{ $('Build Booking Approval').item.json.token }}"
+          }
+        },
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Decisions",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Decisions"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6238b0fd-b3e9-5690-a46a-c466d5d25de0",
+      "name": "Get Drafting Settings",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        192
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Settings",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "isNotEmpty",
+              "keyName": "key"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "resource": "row",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "290bd838-ce4b-50df-b179-23328a0d337a",
+      "name": "Drop Bulk & Automated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        560
+      ],
+      "parameters": {
+        "jsCode": "const scope = $('Build Gmail Search Query').first().json.scope;\nconst out = [];\n$input.all().forEach(function (it, i) {\n  const j = it.json || {};\n  if (scope === 'inbox') {\n    const h = j.headers || {};\n    const hv = function (k) { return String(h[k] || ''); };\n    const auto = hv('auto-submitted');\n    if (hv('list-unsubscribe') || hv('list-id') || /bulk|list|junk/i.test(hv('precedence'))) return;\n    if (auto && !/:\\s*no\\s*$/i.test(auto)) return;\n    const from = String((j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || '').toLowerCase();\n    const local = from.split('@')[0];\n    if (/(^|[._+-])(no-?reply|do-?not-?reply|notifications?|newsletters?|mailer-daemon|bounces?)([._+-]|$)/.test(local)) return;\n  }\n  out.push({ json: j, pairedItem: { item: i } });\n});\nreturn out;\n"
+      }
+    },
+    {
+      "id": "c05cfbce-b9fd-5413-ba2e-8c436ba13380",
+      "name": "Needs Draft?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4272,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skipDraft }}",
+              "operator": {
+                "operation": "false",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "82a28ce2-102f-52c2-8e95-83e906edda38",
+      "name": "Get Busy Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2704,
+        160
+      ],
+      "parameters": {
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "Gmail Assistant — Busy Calendars",
+          "mode": "id",
+          "value": "REPLACE_WITH_WORKFLOW_ID__Busy_Calendars"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": true,
+          "convertFieldsToString": false,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "days",
+              "id": "days",
+              "required": false,
+              "type": "number"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "extraCalendars",
+              "id": "extraCalendars",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "days": 76,
+            "extraCalendars": "={{ $json.senderCalendarId || '' }}"
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "04baa550-fce8-500c-89ba-65c1da6db61d",
+      "name": "Get Processed (Follow-up)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        -96
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Processed Sender Emails",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Processed_Sender_Emails"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "gte",
+              "keyValue": "0"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "299c5735-f116-5927-89a7-fe60d968a4a9",
+      "name": "Get Drafts",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        -96
+      ],
+      "parameters": {
+        "operation": "getAll",
+        "options": {},
+        "resource": "draft",
+        "returnAll": true
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "webhookId": "d745fd91-2b3f-5f88-9315-da301e119713",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "b9aaf095-7d42-594d-8781-5aee05a4154c",
+      "name": "Get Sent (8 days)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        -96
+      ],
+      "parameters": {
+        "filters": {
+          "q": "in:sent",
+          "receivedAfter": "={{ $now.minus({ days: (parseInt((($('Get Drafting Settings').all().find(i => i.json.key === 'followUpDays') || {}).json || {}).value, 10) || 7) + 1 }).toISO() }}"
+        },
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "webhookId": "ef5f5580-51ea-5e7a-9337-f21592e1dfda",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "a7b03c4f-98aa-5232-8d7f-5ba4ae1dffe0",
+      "name": "Draft Follow-up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -96
+      ],
+      "parameters": {
+        "jsCode": "// Draft follow-up (port of logic.draft_check + handled_ids). One item out: {changes, handled, ok, counts}.\nfunction stg(k, d) { const r = $('Get Drafting Settings').all().find(function (i) { return i.json && i.json.key === k; }); const v = parseInt(r && r.json.value, 10); return v > 0 ? v : d; }\nconst DAY = 86400000, FOLLOW_DAYS = stg('followUpDays', 7);\nconst REPLY = ['none', 'pending', 'awaiting_approval', 'withdrawn'];\nconst REDRAFTABLE = ['none', 'pending', 'withdrawn'];\nconst FINAL = ['sent', 'discarded', 'superseded'];\nconst DEAD = ['deleted', 'discarded', 'superseded'];\nfunction ms(v) {\n  if (v == null || v === '') return 0;\n  if (v instanceof Date) return v.getTime();\n  if (typeof v === 'number') return v;\n  const s = String(v);\n  if (/^\\d+(\\.\\d+)?$/.test(s)) return Math.floor(Number(s));\n  const d = DateTime.fromISO(s, { zone: 'Europe/Rome' });\n  return d.isValid ? d.toMillis() : 0;\n}\nfunction items(node) { try { return $(node).all().map(function (i) { return i.json || {}; }); } catch (e) { return null; } }\nconst rows = (items('Get Processed (Follow-up)') || []).filter(function (r) { return r && r.id != null && r.trackedGmailId; });\nconst draftsRaw = items('Get Drafts');\nconst sentRaw = items('Get Sent (8 days)');\n// Never mark drafts as deleted when Gmail could not be read.\nconst ok = draftsRaw !== null && sentRaw !== null &&\n  !draftsRaw.some(function (d) { return d.error; }) && !sentRaw.some(function (m) { return m.error; });\nconst drafts = (draftsRaw || []).filter(function (d) { return d.threadId; });\nconst sent = (sentRaw || []).filter(function (m) { return m.threadId; });\nconst now = DateTime.now().toMillis();\nconst since = now - FOLLOW_DAYS * DAY;\nconst draftThreads = {};\ndrafts.forEach(function (d) { if (String(d.subject || '').indexOf('[Inbox Pilot]') !== 0) draftThreads[d.threadId] = true; });\nconst sentAt = {};\nsent.forEach(function (m) { (sentAt[m.threadId] = sentAt[m.threadId] || []).push(ms(m.internalDate)); });\nconst reply = rows.filter(function (r) { return r.threadId && REPLY.indexOf(r.proposalStatus) >= 0; });\nconst latest = {};\nreply.forEach(function (r) {\n  const k = [ms(r.processedAt), Number(r.id) || 0];\n  const cur = latest[r.threadId];\n  if (!cur || k[0] > cur.k[0] || (k[0] === cur.k[0] && k[1] > cur.k[1])) latest[r.threadId] = { k: k, id: r.id };\n});\nconst changes = [];\nif (ok) {\n  reply.forEach(function (r) {\n    const cur = String(r.draftStatus || '');\n    const at = ms(r.processedAt);\n    if (FINAL.indexOf(cur) >= 0 || at < since) return;\n    let next;\n    if ((sentAt[r.threadId] || []).some(function (t) { return t >= at; })) next = 'sent';\n    else if (latest[r.threadId].id !== r.id) next = 'superseded';\n    else if (draftThreads[r.threadId]) next = 'ready';\n    else next = 'deleted';\n    if (next !== cur) {\n      const c = { id: r.id, draftStatus: next };\n      if (DEAD.indexOf(next) >= 0 && r.proposalStatus === 'pending') c.proposalStatus = 'withdrawn';\n      changes.push(c);\n    }\n  });\n}\nconst byId = {};\nrows.forEach(function (r) { byId[r.id] = r; });\nchanges.forEach(function (c) { if (byId[c.id]) Object.assign(byId[c.id], c); });\n// Emails not to draft again: all processed ones, except a reply whose draft was deleted unsent.\nconst newest = {};\nrows.forEach(function (r) {\n  const g = String(r.trackedGmailId);\n  if (!newest[g] || (Number(r.id) || 0) > (Number(newest[g].id) || 0)) newest[g] = r;\n});\nconst handled = Object.keys(newest).filter(function (g) {\n  const r = newest[g];\n  return !(r.draftStatus === 'deleted' && REDRAFTABLE.indexOf(r.proposalStatus) >= 0);\n});\nreturn [{ json: { ok: ok, changes: changes, handled: handled } }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "b19c1f28-8768-57c2-b461-066731904cc5",
+      "name": "Split Draft Changes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -96
+      ],
+      "parameters": {
+        "jsCode": "// One item per row to update; proposalStatus is always written (unchanged unless the proposal was withdrawn).\nconst cur = {};\n$('Get Processed (Follow-up)').all().forEach(function (it) { if (it.json && it.json.id != null) cur[it.json.id] = it.json; });\nreturn ($input.first().json.changes || []).map(function (c) {\n  return { json: { id: c.id, draftStatus: c.draftStatus, proposalStatus: c.proposalStatus || (cur[c.id] || {}).proposalStatus || '' } };\n});\n"
+      }
+    },
+    {
+      "id": "f7906c72-214f-59b0-92d8-b32f0581b2d0",
+      "name": "Update Draft Status",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        -96
+      ],
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "draftStatus",
+              "id": "draftStatus",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "proposalStatus",
+              "id": "proposalStatus",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "draftStatus": "={{ $json.draftStatus }}",
+            "proposalStatus": "={{ $json.proposalStatus }}"
+          }
+        },
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Processed Sender Emails",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Processed_Sender_Emails"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "id",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "update",
+        "options": {}
+      }
+    },
+    {
+      "id": "9c68c43c-fba3-54ee-8d0e-86fca4c9eec0",
+      "name": "Filter Already-Drafted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        384
+      ],
+      "parameters": {
+        "jsCode": "// Skip emails already handled (by any engine). A reply whose draft was deleted without being sent\n// is not in 'handled', so it gets a fresh draft (see Draft Follow-up).\nconst fu = $('Draft Follow-up').first().json || {};\nconst handled = new Set((fu.handled || []).map(String));\nconst out = [];\n$input.all().forEach(function (it, i) { if (it.json && it.json.id && !handled.has(String(it.json.id))) out.push({ json: it.json, pairedItem: { item: i } }); });\nreturn out;\n"
+      }
+    },
+    {
+      "id": "315305d0-f268-5a33-bf01-f50119c5be38",
+      "name": "Refers To Earlier?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2592,
+        980
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.output.refersToEarlier === true && $json.output.needsReply !== false }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "946c7c23-1fca-5572-958a-d5d91418058b",
+      "name": "Search Earlier Items",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2816,
+        980
+      ],
+      "parameters": {
+        "filters": {
+          "q": "={{ 'from:\"' + ((($json.from || {}).value || [{}])[0].address || 'unknown@invalid') + '\" {has:attachment \"docs.google.com\" \"drive.google.com\" \"dropbox.com\" \"1drv.ms\" \"sharepoint.com\" \"onedrive\" \"wetransfer\" \"we.tl\"} -in:chats -in:draft' }}",
+          "readStatus": "both",
+          "receivedAfter": "={{ $now.minus({ days: parseInt((($('Get Drafting Settings').all().find(i => i.json.key === 'earlierItemsDays') || {}).json || {}).value, 10) || 60 }).toISO() }}"
+        },
+        "limit": "={{ parseInt((($('Get Drafting Settings').all().find(i => i.json.key === 'earlierItemsMaxEmails') || {}).json || {}).value, 10) || 15 }}",
+        "operation": "getAll",
+        "options": {
+          "downloadAttachments": true
+        },
+        "resource": "message",
+        "returnAll": false,
+        "simple": false
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "webhookId": "71f0e664-4b7d-5baf-8c96-fa9c347ae30f",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "7904d378-022a-56bf-b310-9d6eddbf1a9e",
+      "name": "Find Earlier Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        980
+      ],
+      "parameters": {
+        "jsCode": "// ---- CORE START\nfunction stg(k, d) { const r = $('Get Drafting Settings').all().find(function (i) { return i.json && i.json.key === k; }); const v = parseInt(r && r.json.value, 10); return v > 0 ? v : d; }\nconst REF_DAYS = stg('earlierItemsDays', 60), REF_TOP = 6;\nconst DOC_HOSTS = ['docs.google.com', 'drive.google.com', 'dropbox.com', '1drv.ms', 'onedrive.live.com',\n  'sharepoint.com', 'wetransfer.com', 'we.tl', 'box.com', 'icloud.com', 'notion.so', 'figma.com'];\nconst URL_RE = /https?:\\/\\/[^\\s\"'<>)\\]]+/g;\nconst DOC_EXT = /\\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|csv|zip|rar|7z|key|pages|numbers|rtf|txt)(?:[?#]|$)/i;\nconst INLINE = /^(image\\d*|inline|outlook-|logo|signature)/i;\nconst NOT_DOC = ['text/calendar', 'application/ics', 'application/pkcs7-signature', 'application/x-pkcs7-signature'];\nconst SCHEMA_TAIL = '\\n\\nReturn a JSON object with exactly these keys and value types, as in this example:\\n' +\n  JSON.stringify({ matchIndex: 0, draftReply: 'Hi Anna,\\n\\nyes, your file arrived on 3 October.\\n\\n[your comments]\\n\\nBest,\\nAlex' })\n    .replace(/,\"/g, ', \"').replace(/\":/g, '\": ');\n\nfunction refQuery(addr) {\n  return 'from:\"' + addr + '\" {has:attachment \"docs.google.com\" \"drive.google.com\" \"dropbox.com\" \"1drv.ms\" ' +\n    '\"sharepoint.com\" \"onedrive\" \"wetransfer\" \"we.tl\"} -in:chats -in:draft';\n}\nfunction refTokens(s) {\n  const out = new Set();\n  (String(s || '').toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []).forEach(function (t) { out.add(t); });\n  return out;\n}\nfunction refDay(ms) { return ms ? DateTime.fromMillis(ms, { zone: 'Europe/Rome' }).toISODate() : ''; }\nfunction refInt(v) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }\n\nfunction referenceCandidates(msgs, current, keywords) {\n  const curMs = refInt(current.internalDate);\n  const kws = refTokens((keywords || []).map(String).join(' '));\n  const found = [];\n  msgs.forEach(function (m) {\n    if (m.id === current.id) return;\n    const ms = refInt(m.internalDate);\n    if (curMs && ms > curMs) return;\n    const subject = String(m.subject || '');\n    const same = !!current.threadId && m.threadId === current.threadId;\n    const base = { messageId: m.id || '', threadId: m.threadId || '', subject: subject, at: refDay(ms), ms: ms,\n      sameThread: same, unread: (m.labelIds || []).indexOf('UNREAD') >= 0 };\n    (m.attachments || []).forEach(function (a) {\n      const fn = String(a.filename || '').trim();\n      const mime = String(a.mimeType || '').toLowerCase();\n      const low = fn.toLowerCase();\n      if (!fn || NOT_DOC.indexOf(mime) >= 0 || low.endsWith('.ics') || low.endsWith('.p7s')) return;\n      if (mime.startsWith('image/') && INLINE.test(fn)) return;\n      found.push(Object.assign({}, base, { kind: 'attachment', name: fn, url: '' }));\n    });\n    const seen = new Set();\n    ((String(m.text || '') + ' ' + String(m.html || '')).match(URL_RE) || []).forEach(function (raw) {\n      const u = raw.replace(/&amp;/g, '&').replace(/[.,;:]+$/, '');\n      const low = u.toLowerCase();\n      if (seen.has(low) || !(DOC_HOSTS.some(function (h) { return low.indexOf(h) >= 0; }) || DOC_EXT.test(low))) return;\n      seen.add(low);\n      found.push(Object.assign({}, base, { kind: 'link', name: u.slice(0, 160), url: u }));\n    });\n  });\n  found.forEach(function (c) {\n    let hit = 0;\n    refTokens(c.name + ' ' + c.subject).forEach(function (t) { if (kws.has(t)) hit += 1; });\n    c.score = 3 * hit + (c.sameThread ? 2 : 0);\n  });\n  found.sort(function (a, b) {\n    if (a.score !== b.score) return b.score - a.score;\n    if (a.ms !== b.ms) return b.ms - a.ms;\n    if (a.kind !== b.kind) return a.kind < b.kind ? -1 : 1;\n    const x = a.name.toLowerCase(), y = b.name.toLowerCase();\n    return x < y ? -1 : (x > y ? 1 : 0);\n  });\n  const out = [], keys = new Set();\n  for (const c of found) {\n    const k = c.kind + '\\u0000' + c.name.toLowerCase();\n    if (keys.has(k)) continue;\n    keys.add(k);\n    out.push(c);\n    if (out.length === REF_TOP) break;\n  }\n  return out;\n}\n\nfunction referenceLines(cands) {\n  if (!cands.length) return '(none found)';\n  return cands.map(function (c, i) {\n    return i + '. ' + (c.kind === 'attachment' ? 'Attachment' : 'Link') + ': ' + c.name + ' | received ' + c.at +\n      ' | email subject: \"' + (c.subject || '(no subject)') + '\"' + (c.sameThread ? ' | same conversation' : '');\n  }).join('\\n');\n}\n\nfunction refBody(j) {\n  let t = String(j.text || '').trim();\n  if (!t) {\n    t = String(j.html || '').replace(/<style[\\s\\S]*?<\\/style>/gi, ' ');\n    t = t.replace(/<[^>]+>/g, ' ');\n  }\n  t = t.replace(/[ \\t]+/g, ' ');\n  return t.replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 8000);\n}\n\nfunction referencePrompt(j, cands, now) {\n  const signer = j.senderName || 'Alex Doe';\n  const desc = ((j.output || {}).referenceDescription) || '(not specified)';\n  const d = now.setZone('Europe/Rome').setLocale('en');\n  const today = d.toFormat('cccc') + ' ' + d.day + ' ' + d.toFormat('LLLL yyyy');\n  const frm = (j.from && j.from.text) || 'unknown';\n  const block = '<email>\\nFrom: ' + frm + '\\nSubject: ' + (j.subject || '(no subject)') + '\\nBody:\\n' +\n    (refBody(j) || '(no body available)') + '\\n</email>';\n  return 'Today is ' + today + ' (Europe/Rome).\\n\\n' +\n    'You are drafting an email reply on behalf of ' + signer + ', who received the email below. The sender refers to something sent earlier: ' + desc + '.\\n\\n' +\n    'Instructions for this sender: ' + (j.senderNotes || '(none)') + '\\n\\n' +\n    'Original email:\\n' + block + '\\n\\n' +\n    'Items found in the recipient\\'s mailbox from this sender in the last ' + REF_DAYS + ' days (attachments and document links, best matches first):\\n' +\n    referenceLines(cands) + '\\n\\n' +\n    'STEP 1 -- MATCH: set matchIndex to the number of the item that is what the sender refers to. If none of the items clearly matches, set matchIndex to -1. Do not pick an unrelated item.\\n\\n' +\n    'STEP 2 -- DRAFT: write a complete, natural, ready-to-edit reply in draftReply.\\n' +\n    '- If matchIndex is not -1: confirm that the item arrived, naming it and the date it was received. Never say or imply that it has been read, reviewed, approved or forwarded. Put the placeholder [your comments] on its own line where the recipient will add his own view, then close politely.\\n' +\n    '- If matchIndex is -1: say politely that you cannot find it in your inbox and ask the sender to send it again or to share the link.\\n' +\n    '- Answer any other question in the email only with facts stated above; where a fact is unknown, use a placeholder in square brackets.\\n' +\n    'Reply in the same language the original email was written in. Follow the sender-specific instructions above if any are given. Sign off as ' + String(signer).split(' ')[0] + '.\\n\\n' +\n    'Respond with ONLY the JSON object matching the required schema. No explanation, no markdown code fences, no text before or after the JSON.' + SCHEMA_TAIL;\n}\n// ---- CORE END\n\n// For every email that refers to something sent earlier: the Gmail results paired to it, ranked.\nconst emails = $('Refers To Earlier?').all(0);\nconst results = $input.all();\nfunction pairOf(r) {\n  const p = Array.isArray(r.pairedItem) ? r.pairedItem[0] : r.pairedItem;\n  return p && typeof p.item === 'number' ? p.item : -1;\n}\nreturn emails.map(function (e, i) {\n  const mine = results.filter(function (r) { return pairOf(r) === i; });\n  const failed = mine.some(function (r) { return r.json && r.json.error; });\n  const msgs = mine.filter(function (r) { return r.json && r.json.id; }).map(function (r) {\n    const j = r.json;\n    const att = (Array.isArray(j.attachments) ? j.attachments : []).map(function (a) {\n      return { filename: a.filename || '', mimeType: a.contentType || a.mimeType || '' };\n    }).concat(Object.values(r.binary || {}).map(function (b) {\n      return { filename: b.fileName || '', mimeType: b.mimeType || '' };\n    }));\n    return { id: j.id, threadId: j.threadId, subject: j.subject || '', internalDate: String(Date.parse(j.date) || 0),\n      labelIds: j.labelIds || [], text: j.text || '', html: j.html || j.textAsHtml || '', attachments: att };\n  });\n  const ej = e.json;\n  const current = { id: ej.id, threadId: ej.threadId, internalDate: String(Date.parse(ej.date) || 0) };\n  const kws = (((ej.output || {}).referenceKeywords) || []).map(String).filter(function (k) { return k.trim(); }).slice(0, 5);\n  const cands = failed ? [] : referenceCandidates(msgs, current, kws);\n  const firstIdx = results.indexOf(mine[0]);\n  return { json: Object.assign({}, ej, { refCandidates: cands, refLookupFailed: failed,\n    refPrompt: failed ? '' : referencePrompt(ej, cands, $now) }), pairedItem: { item: firstIdx >= 0 ? firstIdx : 0 } };\n});"
+      }
+    },
+    {
+      "id": "592667c8-62b4-5251-b055-f5dcb0dbaf10",
+      "name": "Lookup OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3264,
+        980
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.refLookupFailed }}",
+              "operator": {
+                "operation": "false",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3dd51f26-630a-5509-bafa-7cbb009b465b",
+      "name": "Draft Earlier-Item Reply",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        3488,
+        980
+      ],
+      "parameters": {
+        "batching": {},
+        "hasOutputParser": false,
+        "promptType": "define",
+        "text": "={{ $json.refPrompt }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "1663ef2b-089f-5e9c-8f91-054b2b3b2a27",
+      "name": "Use Earlier-Item Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3712,
+        980
+      ],
+      "parameters": {
+        "jsCode": "// Put the earlier-item reply in place of the classifier's draft; keep the classifier's draft if the model failed.\nconst src = $('Lookup OK?').all(0);\nreturn $input.all().map(function (it, i) {\n  const e = (src[i] && src[i].json) || {};\n  let t = String((it.json && it.json.text) || '').replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\n  t = t.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  let r = {};\n  try { r = JSON.parse(t); } catch (x) {\n    const m = t.match(/\\{[\\s\\S]*\\}/);\n    try { r = m ? JSON.parse(m[0]) : {}; } catch (y) { r = {}; }\n  }\n  const reply = String(r.draftReply || '').trim();\n  const out = Object.assign({}, e.output || {});\n  if (reply) out.draftReply = reply;\n  const idx = typeof r.matchIndex === 'number' ? r.matchIndex : -1;\n  const cands = e.refCandidates || [];\n  return { json: Object.assign({}, e, { output: out, refMatch: idx >= 0 && idx < cands.length ? cands[idx] : null }),\n    pairedItem: { item: i } };\n});\n"
+      }
+    }
+  ],
+  "connections": {
+    "Get Tracked Senders": {
+      "main": [
+        [
+          {
+            "node": "Build Gmail Search Query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Processed (Follow-up)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gmail Search Query": {
+      "main": [
+        [
+          {
+            "node": "Search Unprocessed Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Pending Proposal": {
+      "main": [
+        [
+          {
+            "node": "Attach Pending Proposal Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Pending Proposal Context": {
+      "main": [
+        [
+          {
+            "node": "Classify & Draft Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classify & Draft Reply",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Draft Appointment Reply",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Draft Earlier-Item Reply",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classification Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Classify & Draft Reply",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify & Draft Reply": {
+      "main": [
+        [
+          {
+            "node": "Merge Classification With Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Classification With Email": {
+      "main": [
+        [
+          {
+            "node": "Is Confirming Proposal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Confirming Proposal?": {
+      "main": [
+        [
+          {
+            "node": "Extract Confirmed Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Appointment Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Confirmed Slot": {
+      "main": [
+        [
+          {
+            "node": "Has Valid Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Valid Slot?": {
+      "main": [
+        [
+          {
+            "node": "Generate Booking Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Appointment Request?": {
+      "main": [
+        [
+          {
+            "node": "Get Busy Events",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refers To Earlier?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Free Slots": {
+      "main": [
+        [
+          {
+            "node": "Draft Appointment Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Appointment Reply": {
+      "main": [
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Draft": {
+      "main": [
+        [
+          {
+            "node": "Mark Email As Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Booking Token": {
+      "main": [
+        [
+          {
+            "node": "Build Booking Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Booking Approval": {
+      "main": [
+        [
+          {
+            "node": "Create Approval Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Approval Draft": {
+      "main": [
+        [
+          {
+            "node": "Record Booking Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Booking Decision": {
+      "main": [
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Drafting Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Drafting Settings": {
+      "main": [
+        [
+          {
+            "node": "Get Tracked Senders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Unprocessed Emails": {
+      "main": [
+        [
+          {
+            "node": "Drop Bulk & Automated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Draft Fields": {
+      "main": [
+        [
+          {
+            "node": "Needs Draft?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Draft?": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Email As Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Busy Events": {
+      "main": [
+        [
+          {
+            "node": "Compute Free Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Processed (Follow-up)": {
+      "main": [
+        [
+          {
+            "node": "Get Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Drafts": {
+      "main": [
+        [
+          {
+            "node": "Get Sent (8 days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sent (8 days)": {
+      "main": [
+        [
+          {
+            "node": "Draft Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Split Draft Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Draft Changes": {
+      "main": [
+        [
+          {
+            "node": "Update Draft Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Bulk & Automated": {
+      "main": [
+        [
+          {
+            "node": "Filter Already-Drafted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Already-Drafted": {
+      "main": [
+        [
+          {
+            "node": "Check Pending Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refers To Earlier?": {
+      "main": [
+        [
+          {
+            "node": "Search Earlier Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Earlier Items": {
+      "main": [
+        [
+          {
+            "node": "Find Earlier Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Earlier Items": {
+      "main": [
+        [
+          {
+            "node": "Lookup OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup OK?": {
+      "main": [
+        [
+          {
+            "node": "Draft Earlier-Item Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Earlier-Item Reply": {
+      "main": [
+        [
+          {
+            "node": "Use Earlier-Item Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Earlier-Item Reply": {
+      "main": [
+        [
+          {
+            "node": "Normalize Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "template": "mailroom",
+    "file": "02-drafting.json"
+  },
+  "description": "Sub-workflow: reads Tracked Senders, drafts replies (48h lookback, deduped), negotiates and books appointments. Called by Gmail Assistant daily at 14:00 Europe/Rome."
+}

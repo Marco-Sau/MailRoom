@@ -1,0 +1,48 @@
+# Copy to config/jobs.yaml. Each entry becomes one button in the app.
+jobs:
+
+  # The n8n Gmail Assistant, run by the app: drafting (with free-slot proposals),
+  # event checks, recap Google Doc. The model only thinks; the app does every
+  # Gmail / Calendar / Docs action. Shares settings, senders and history with n8n.
+  # `model:` is optional: leave it out to use Settings -> Models ("default" = the CLI picks).
+  - id: email-assistant-claude
+    name: "Claude"
+    runner: assistant
+    provider: claude_cli        # Claude Code `claude -p`, your Claude Pro/Max sign-in
+    steps: [drafting, events, recap]
+
+  - id: email-assistant-chatgpt
+    name: "ChatGPT"
+    runner: assistant
+    provider: codex_cli         # Codex CLI `codex exec`, your ChatGPT sign-in
+    steps: [drafting, events, recap]
+
+  - id: email-assistant-gemini
+    name: "Gemini"
+    runner: assistant
+    provider: gemini_cli        # Gemini via Antigravity CLI (agy), your Google sign-in
+    steps: [drafting, events, recap]
+
+  - id: email-assistant-ollama
+    name: "Ollama"
+    runner: assistant
+    provider: ollama            # local, nothing leaves the Mac
+    steps: [drafting, events, recap]
+
+  - id: gmail-assistant-n8n
+    name: "n8n"
+    runner: n8n
+    webhook_url: "http://localhost:5678/webhook/gmail-assistant"
+    auth: key               # key (X-Inbox-Pilot-Key, Settings → Webhook key) | none
+    params: {mode: "daily"}
+
+  # Older app-side triage pipeline (API keys, local Review tab). Kept for reference.
+  - id: triage-claude
+    name: "Legacy triage - Claude API"
+    runner: pipeline
+    provider: anthropic
+    account: gmail-personal
+    steps: [fetch, classify, prioritize, sheets, calendar, draft]
+    params:
+      query: "in:inbox newer_than:1d -category:promotions"
+      max_emails: 40

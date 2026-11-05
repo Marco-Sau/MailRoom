@@ -1,0 +1,182 @@
+<!-- MailRoom user guide. Loaded into the Guide tab (web/app.js → loadGuide). -->
+<div class="guide">
+<nav class="g-toc">
+  <a href="#g-what">What MailRoom does</a>
+  <a href="#g-start">Quick start</a>
+  <a href="#g-run">One run, step by step</a>
+  <a href="#g-when">When and how much it reads</a>
+  <a href="#g-screens">The screens</a>
+  <a href="#g-engines">The engines</a>
+  <a href="#g-priority">Priority levels</a>
+  <a href="#g-terms">Glossary</a>
+  <a href="#g-safety">Safety rules</a>
+  <a href="#g-faq">Questions</a>
+</nav>
+
+<div class="g-body">
+
+<section id="g-what">
+  <h2>What MailRoom does</h2>
+  <p>MailRoom reads your Gmail, prepares the work, and leaves every decision to you. In one run it:</p>
+  <ul>
+    <li><b>drafts replies</b> to the emails that need one, in the language of the email;</li>
+    <li><b>proposes meeting times</b> when someone asks to meet, after checking your calendars;</li>
+    <li><b>checks events</b> (webinars, courses, conferences) against your calendar and tells you if you are free;</li>
+    <li><b>writes a recap</b> of the recent mail (by default the last 24 hours), ranked by priority.</li>
+  </ul>
+  <div class="g-callout"><b>MailRoom never sends an email and never changes your calendar on its own.</b> Replies wait in Gmail → Drafts; calendar changes happen only after you press a button and confirm.</div>
+</section>
+
+<section id="g-start">
+  <h2>Quick start</h2>
+  <ol class="g-steps">
+    <li><b>Run.</b> Open <i>Run</i> and press <i>Run ▸</i> on one engine (for example Claude). Follow the progress bar and the log.</li>
+    <li><b>Review.</b> Open <i>Review</i>: read each reply draft next to the email it answers, edit it if needed, then <i>Open in Gmail</i> to send it yourself — or <i>Discard</i> it.</li>
+    <li><b>Decide.</b> For meeting confirmations and events, use the buttons on the note (<i>BOOK it</i>, <i>Add to calendar</i>, <i>Keep</i>, <i>Swap</i>…) and confirm on the page that opens.</li>
+    <li><b>Read the recap.</b> Open <i>Recaps</i> to see what arrived recently, most important first.</li>
+  </ol>
+</section>
+
+<section id="g-run">
+  <h2>One run, step by step</h2>
+  <div class="g-flow">
+    <div class="g-node"><span class="g-k">1</span><b>Drafting</b><small>emails of the last 48 h</small></div>
+    <div class="g-arrow">→</div>
+    <div class="g-node"><span class="g-k">2</span><b>Events</b><small>emails of the last 24 h</small></div>
+    <div class="g-arrow">→</div>
+    <div class="g-node"><span class="g-k">3</span><b>Recap</b><small>all mail of the last 24 h</small></div>
+  </div>
+
+  <h3>1 · Drafting</h3>
+  <p><b>First, a follow-up of earlier drafts</b> (by default the last 7 days): for each reply MailRoom prepared before, it checks whether the draft is still waiting in Gmail, was <b>sent</b>, or was <b>deleted without being sent</b>. A deleted, unsent reply gets a <b>fresh draft</b> in this run — unless you discarded it in <i>Review</i>, which MailRoom remembers as “no”. (Only emails still inside the reply window are drafted again; older ones are just reported.)</p>
+  <p>Then MailRoom looks at the emails it is set to watch from the reply window (by default the <b>last 48 hours</b>) that it has <b>not handled before</b>. Newsletters, notifications and automatic messages are skipped or marked <i>No reply needed</i>. For each email the AI decides one of four things:</p>
+  <table class="g-table">
+    <tr><th>The email is…</th><th>MailRoom prepares</th></tr>
+    <tr><td>a normal message that expects an answer</td><td>a <b>reply draft</b> in the same thread</td></tr>
+    <tr><td>a message asking about something sent earlier ("did you read the document I sent you?")</td><td>MailRoom first looks in Gmail for it (that sender's attachments and document links, last 60 days). Found: a reply draft confirming it arrived and when, with a <b>[your comments]</b> spot for you to fill in. It never says you read it. Not found: a reply draft asking them to send it again or share the link.</td></tr>
+    <tr><td>a request to meet or call</td><td>a reply draft that offers <b>up to 3 free times</b> (see below)</td></tr>
+    <tr><td>a reply that <b>accepts one of the times</b> you proposed</td><td>a short confirmation draft <b>and</b> a <b>BOOK?</b> note</td></tr>
+    <tr><td>something that needs no answer (thanks, FYI, receipts)</td><td>nothing — it is marked <i>No reply needed</i></td></tr>
+  </table>
+  <p><b>How meeting times are chosen.</b> MailRoom reads your calendars and only offers time that is free in all of them. It respects the kind of contact (work, professional career, any time) and the hours allowed for that kind, starts at least <b>2 hours from now</b>, prefers the period the sender asked for (otherwise the next two weeks), spreads the options over different days, and keeps times already offered to someone else on hold for 7 days so nobody gets the same slot. The meeting length is the one requested, or 30 minutes.</p>
+
+  <h3>2 · Events</h3>
+  <p>Emails of the events window (by default the <b>last 24 hours</b>) that look like an event (webinar, course, workshop, conference, seminar, meetup, “save the date”, Zoom/Teams/Meet links) are read by the AI. If it is a real event with a date and time, MailRoom checks your calendars and writes a note:</p>
+  <ul>
+    <li><span class="g-pill ok">FREE</span> you are free — buttons <i>Add to calendar</i> / <i>Ignore</i>;</li>
+    <li><span class="g-pill warn">CONFLICT</span> it overlaps something — buttons <i>Keep my schedule</i> / <i>Swap to the event</i>;</li>
+    <li><span class="g-pill">CHECK</span> the calendar could not be read right now — buttons <i>Add anyway</i> / <i>Ignore</i>.</li>
+  </ul>
+  <p>Events already in your calendar, past events and emails without a real date are ignored.</p>
+
+  <h3>3 · Recap</h3>
+  <p>All mail received in the recap window (by default the <b>last 24 hours</b>) is summarized in one sentence each, given a topic and a <a href="#g-priority">priority from 1 to 5</a>, and saved as a recap. You find it in <i>Recaps</i>; a Google Doc copy is kept in Drive.</p>
+  <p><b>Every run writes a recap, even when nothing new arrived.</b> It starts with a <b>run summary</b>: new emails handled since the previous recap, drafts created, notes created, and what is still open in the follow-up period (by default 7 days) — drafts ready but not sent, drafts sent, drafts deleted without sending, notes waiting for your decision.</p>
+</section>
+
+<section id="g-when">
+  <h2>When and how much it reads</h2>
+  <table class="g-table">
+    <tr><th></th><th>Looks back (Standard, by default)</th><th>Notes</th></tr>
+    <tr><td>Reply drafts</td><td>48 hours</td><td>each email is handled <b>once</b>, whatever engine handled it</td></tr>
+    <tr><td>Events</td><td>24 hours</td><td>each email is checked <b>once</b></td></tr>
+    <tr><td>Recap</td><td>24 hours</td><td>a <b>new recap every run</b>, with a run summary; two runs on the same day overlap</td></tr>
+    <tr><td>Draft follow-up</td><td>7 days</td><td>every run checks whether earlier drafts were sent, are still waiting, or were deleted</td></tr>
+  </table>
+  <p><b>Look back</b> on the Run tab changes this for one run: pick 24 h, 48 h, 3 days, 7 days or a custom number of hours (1 to 168), and replies, events and the recap all read that same period. <i>Standard</i> uses the usual windows (by default the ones above). Your last choice is remembered. A longer window reads more email, so the run takes longer and uses more of your plan; emails already handled are still skipped.</p>
+  <ul>
+    <li><b>When it runs.</b> Claude, ChatGPT, Gemini and Ollama run only when you press <i>Run</i>. n8n also runs when you press <i>Run</i>, and can additionally run by itself every day at <b>14:00</b> (Italian time) when its daily schedule is switched on.</li>
+    <li><b>Shared memory.</b> All five engines share one list of handled emails and one list of open decisions. Running Claude and then Gemini does not produce two drafts for the same email.</li>
+    <li><b>One run at a time.</b> While a run is going, the other buttons wait.</li>
+  </ul>
+</section>
+
+<section id="g-screens">
+  <h2>The screens</h2>
+  <dl class="g-dl">
+    <dt>Run</dt><dd>One card per engine with its last result. Press <i>Run ▸</i> to start; the panel below shows the three steps (Drafting → Events → Recap), a progress bar and the live log. <i>Stop</i> ends the run within a few seconds; what was already prepared stays in Gmail Drafts.</dd>
+    <dt>Review</dt><dd>Everything prepared and still waiting in Gmail → Drafts: reply drafts (editable) and decision notes (with their buttons). Filter by <i>Replies</i> or <i>Decision notes</i>. <i>Save edits</i> updates the draft in Gmail, <i>Open in Gmail</i> opens it so you can send it, <i>Discard draft</i> deletes the draft only. The number next to Review in the sidebar is how many items are waiting.</dd>
+    <dt>Recaps</dt><dd>Every recap, newest first, from all engines; a run with nothing new is marked “nothing new”. The top of each recap is the run summary. Click one to read it grouped by priority; filter by level or search by sender, subject or text. Subjects open the email in Gmail; <i>Open Google Doc</i> opens the Drive copy.</dd>
+    <dt>History</dt><dd>Every run with its engine, model, result and full log — useful to see what happened yesterday or why a run failed.</dd>
+    <dt>Appearance</dt><dd>The three buttons at the bottom of the sidebar: follow the Mac, always light, always dark.</dd>
+  </dl>
+</section>
+
+<section id="g-engines">
+  <h2>The engines</h2>
+  <p>All five buttons do the <b>same job</b> with the same rules; they differ in which AI does the reading and writing, where it runs and how it is paid. In every case MailRoom itself does the Gmail and Calendar work; the AI only reads and writes text.</p>
+  <table class="g-table">
+    <tr><th>Engine</th><th>What it is</th><th>Where the AI runs</th><th>Cost</th></tr>
+    <tr><td><b>Claude</b></td><td>Anthropic's model, used through the Claude Code command-line tool</td><td>Anthropic's servers</td><td>included in the Claude plan (counts toward its usage limits)</td></tr>
+    <tr><td><b>ChatGPT</b></td><td>OpenAI's model, used through the Codex command-line tool</td><td>OpenAI's servers</td><td>included in the ChatGPT plan</td></tr>
+    <tr><td><b>Gemini</b></td><td>Google's model, used through the Gemini command-line tool</td><td>Google's servers</td><td>included in the Google account's Gemini plan (or its free daily quota)</td></tr>
+    <tr><td><b>Ollama</b></td><td>open-source models running on this Mac</td><td><b>this Mac only</b> — email text never leaves it</td><td>free; slower and usually less precise than the cloud models</td></tr>
+    <tr><td><b>n8n</b></td><td>an automation platform on a private server that runs the original version of this assistant; it calls Claude through Anthropic's API</td><td>the n8n server + Anthropic</td><td>pay-per-use API billing</td></tr>
+  </table>
+  <p class="g-note"><b>n8n</b> is the “workflow” version: it keeps working even when this Mac is off or MailRoom is closed (for example its daily 14:00 run). The other four run inside MailRoom, so the app must stay open until the run finishes.</p>
+</section>
+
+<section id="g-priority">
+  <h2>Priority levels (recap)</h2>
+  <p>The five levels and what they mean by default:</p>
+  <table class="g-table">
+    <tr><th>Level</th><th>Meaning</th></tr>
+    <tr><td><span class="g-lv" style="--c:var(--p1)">5 · CRITICAL</span></td><td>action needed within about 24 hours: hard deadline, security or login alert, payment due, legal or contractual obligation</td></tr>
+    <tr><td><span class="g-lv" style="--c:var(--p2)">4 · HIGH</span></td><td>action needed but not today: personal or work mail that expects a reply, requests, appointments to confirm</td></tr>
+    <tr><td><span class="g-lv" style="--c:var(--p3)">3 · MEDIUM</span></td><td>worth keeping, no action: receipts, confirmations, bookings, official documents</td></tr>
+    <tr><td><span class="g-lv" style="--c:#8b92a3">2 · LOW</span></td><td>informational: newsletters you subscribed to, job posts, announcements</td></tr>
+    <tr><td><span class="g-lv" style="--c:var(--muted)">1 · IGNORE</span></td><td>marketing, promotions, cold sales, spam, routine automatic notifications</td></tr>
+  </table>
+  <p>The level reflects what the email actually asks of you, not how urgent the sender says it is. Each item also shows a short <i>why</i>.</p>
+</section>
+
+<section id="g-terms">
+  <h2>Glossary</h2>
+  <dl class="g-dl">
+    <dt>Reply draft</dt><dd>An answer written by the AI and saved in Gmail → Drafts, in the original conversation. Nobody receives it until you send it.</dd>
+    <dt>Decision note</dt><dd>A draft with <b>no recipient</b> whose subject starts with <code>[Inbox Pilot]</code>. It cannot be sent by accident; it carries the buttons for a decision.</dd>
+    <dt>BOOK? note</dt><dd>Someone accepted one of the times you offered. <i>BOOK it</i> creates the meeting in your calendar; <i>Do NOT book</i> releases the times you had offered.</dd>
+    <dt>FREE / CONFLICT / CHECK</dt><dd>The result of the event check: free at that time, overlapping something, or the calendar could not be read.</dd>
+    <dt>Add / Ignore</dt><dd>For a free event: put it in your calendar, or do nothing.</dd>
+    <dt>Keep / Swap</dt><dd>For a conflicting event: keep what you already had, or add the event and get draft messages asking to move the meetings it overlaps.</dd>
+    <dt>Confirmation page</dt><dd>Every note button opens a page that says exactly what will happen. Nothing changes until you press <i>Confirm</i> there; each button works once.</dd>
+    <dt>Proposed, awaiting confirmation</dt><dd>You offered times and are waiting for the other person. Those times stay reserved for 7 days.</dd>
+    <dt>Awaiting your BOOK</dt><dd>The other person chose a time; a BOOK? note is waiting for you.</dd>
+    <dt>Draft ready, not sent</dt><dd>The reply is waiting in Gmail → Drafts.</dd>
+    <dt>Sent</dt><dd>You sent a reply in that conversation after MailRoom prepared the draft.</dd>
+    <dt>Draft deleted, not sent</dt><dd>The draft disappeared from Gmail and nothing was sent. If the email is still recent, the next run prepares a new draft.</dd>
+    <dt>Discarded</dt><dd>You discarded the draft in Review; MailRoom will not prepare it again.</dd>
+    <dt>Replaced by a newer draft</dt><dd>A newer email in the same conversation got its own draft.</dd>
+    <dt>No reply needed / Not tracked</dt><dd>In a recap: the AI decided no answer is needed / the email was outside what MailRoom drafts replies for.</dd>
+    <dt>Run summary</dt><dd>The box at the top of every recap: what the run did and what is still open.</dd>
+    <dt>Topic</dt><dd>A 2–4 word label the AI gives each email in a recap so similar emails group together.</dd>
+    <dt>Engine</dt><dd>Which AI did the work (Claude, ChatGPT, Gemini, Ollama, n8n).</dd>
+    <dt>Run</dt><dd>One pass of Drafting → Events → Recap.</dd>
+  </dl>
+</section>
+
+<section id="g-safety">
+  <h2>Safety rules</h2>
+  <ul>
+    <li>MailRoom <b>never sends email</b>: its code only creates, edits and deletes drafts. You always send from Gmail.</li>
+    <li>Calendar changes happen <b>only</b> after a note button <b>and</b> <i>Confirm</i>.</li>
+    <li>Discarding in Review deletes <b>only the draft</b>; received emails are never deleted.</li>
+    <li>The AI is told to treat every email as data and to ignore instructions written inside it. In the Claude, ChatGPT, Gemini and Ollama engines it also has no tools: it can only write text, never act.</li>
+    <li>The AI can be wrong. Read every draft before sending; check times and names.</li>
+  </ul>
+</section>
+
+<section id="g-faq">
+  <h2>Questions</h2>
+  <dl class="g-dl">
+    <dt>I pressed Run twice. Will I get duplicate drafts?</dt><dd>No. Each email is handled once, across all engines; a draft that is still waiting is never duplicated. Each run writes its own recap with its summary.</dd>
+    <dt>I deleted a draft by mistake.</dt><dd>Run again: if the email is still inside the reply window (by default 48 hours), a new draft is prepared. (Drafts discarded in Review are not re-created.)</dd>
+    <dt>A run says “failed”.</dt><dd>Open <i>History</i>, click the run and read the last lines of the log; they say which step failed and why. Drafts made before the failure stay in Gmail. Report the message to whoever manages MailRoom.</dd>
+    <dt>A draft I deleted in Gmail still shows in Review.</dt><dd>Press <i>Refresh</i> in Review; it re-reads Gmail.</dd>
+    <dt>Can I close MailRoom during a run?</dt><dd>For n8n, yes: it runs on its server. For Claude, ChatGPT, Gemini and Ollama, no: closing the app stops the run (what was already prepared stays in Gmail).</dd>
+    <dt>Which engine should I use?</dt><dd>Any of them gives the same kind of result. Ollama keeps everything on this Mac; the cloud engines are usually faster and more accurate; n8n is the one that can run on a schedule.</dd>
+  </dl>
+</section>
+
+</div>
+</div>

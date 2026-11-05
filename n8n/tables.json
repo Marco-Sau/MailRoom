@@ -1,0 +1,30 @@
+{
+  "note": "Create these five n8n data tables with exactly these names and columns (n8n adds id, createdAt and updatedAt itself). Mailroom finds them by name; the workflows need their IDs (see docs/N8N_SETUP.md).",
+  "tables": [
+    {"name": "Inbox Pilot Settings", "columns": [
+      {"name": "key", "type": "string"}, {"name": "value", "type": "string"}]},
+    {"name": "Tracked Senders", "columns": [
+      {"name": "matchPatterns", "type": "string"}, {"name": "senderName", "type": "string"},
+      {"name": "active", "type": "boolean"}, {"name": "notes", "type": "string"},
+      {"name": "category", "type": "string"}, {"name": "calendarId", "type": "string"}]},
+    {"name": "Processed Sender Emails", "columns": [
+      {"name": "trackedGmailId", "type": "string"}, {"name": "processedAt", "type": "date"},
+      {"name": "threadId", "type": "string"}, {"name": "proposedSlotsJson", "type": "string"},
+      {"name": "proposalStatus", "type": "string"}, {"name": "meetingEventId", "type": "string"},
+      {"name": "draftStatus", "type": "string"}]},
+    {"name": "Inbox Pilot Decisions", "columns": [
+      {"name": "kind", "type": "string"}, {"name": "status", "type": "string"},
+      {"name": "token", "type": "string"}, {"name": "gmailId", "type": "string"},
+      {"name": "threadId", "type": "string"}, {"name": "title", "type": "string"},
+      {"name": "sessionsJson", "type": "string"}, {"name": "conflictsJson", "type": "string"},
+      {"name": "link", "type": "string"}, {"name": "organizer", "type": "string"},
+      {"name": "counterpartEmail", "type": "string"}, {"name": "summary", "type": "string"},
+      {"name": "calendarEventIds", "type": "string"}, {"name": "decidedAt", "type": "date"},
+      {"name": "calendarId", "type": "string"}, {"name": "calendarName", "type": "string"}]},
+    {"name": "Inbox Pilot Recaps", "columns": [
+      {"name": "source", "type": "string"}, {"name": "title", "type": "string"},
+      {"name": "generatedAt", "type": "date"}, {"name": "docUrl", "type": "string"},
+      {"name": "emailCount", "type": "number"}, {"name": "itemsJson", "type": "string"},
+      {"name": "runJson", "type": "string"}]}
+  ]
+}

@@ -1,0 +1,11 @@
+[{"key": "calendars", "value": "[{\"id\": \"primary\", \"name\": \"Personal\"}, {\"id\": \"job@group\", \"name\": \"Work\"}, {\"id\": \"proj@group\", \"name\": \"Projects\"}, {\"id\": \"en.usa#holiday@group.v.calendar.google.com\", \"name\": \"Holidays\"}]"},
+ {"key": "busyCalendars", "value": "[\"primary\", \"job@group\", \"proj@group\", \"en.usa#holiday@group.v.calendar.google.com\"]"},
+ {"key": "workHours", "value": "{\"1\": [[\"09:00\", \"17:00\"]], \"2\": [[\"09:00\", \"17:00\"]], \"3\": [[\"09:00\", \"17:00\"], [\"18:00\", \"20:00\"]], \"4\": [[\"09:00\", \"17:00\"]], \"5\": [[\"09:00\", \"17:00\"]]}"},
+ {"key": "careerHours", "value": "{\"1\": [[\"17:30\", \"20:00\"]], \"2\": [[\"17:30\", \"20:00\"]], \"3\": [[\"17:30\", \"20:00\"]], \"4\": [[\"17:30\", \"20:00\"]], \"5\": [[\"17:30\", \"20:00\"]]}"},
+ {"key": "anytimeHours", "value": "{\"1\": [[\"09:00\", \"21:00\"]], \"2\": [[\"09:00\", \"21:00\"]], \"3\": [[\"09:00\", \"21:00\"]], \"4\": [[\"09:00\", \"21:00\"]], \"5\": [[\"09:00\", \"21:00\"]], \"6\": [[\"09:00\", \"21:00\"]], \"7\": [[\"09:00\", \"21:00\"]]}"},
+ {"key": "bookingCalendars", "value": "{\"fulltime\": \"job@group\", \"career\": \"proj@group\", \"anytime\": \"primary\"}"},
+ {"key": "defaultCategory", "value": "career"},
+ {"key": "workCalendar", "value": "job@group"},
+ {"key": "presenceMinHours", "value": "4"},
+ {"key": "signatureName", "value": "Alex Doe"},
+ {"key": "maxEmails", "value": "25"}]

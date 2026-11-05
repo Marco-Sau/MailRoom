@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/
+*.sqlite3
+*.db
+client_secret*.json
+.DS_Store
+dist/
+build/
+assets/*.png
+
+# personal configuration: copy the *.example.yaml files and edit them
+config/jobs.yaml
+config/rules.yaml

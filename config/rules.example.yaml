@@ -1,0 +1,68 @@
+# Copy to config/rules.yaml and edit. Hot-reloaded on each run.
+identity:
+  full_name: "Alex Doe"
+  role: "Consultant"
+  signature: "Alex"
+  languages: ["en"]                # reply in the language of the incoming email
+  timezone: ""                     # empty = this Mac's time zone (e.g. "America/New_York")
+
+categories:                         # the LLM must pick exactly one
+  - id: appointment
+    description: "Asks to meet, schedule, reschedule or confirm a time"
+  - id: request_action
+    description: "A colleague, client or contact asks you to do something or provide info"
+  - id: internal_admin
+    description: "Internal administrative traffic: HR, procurement, approvals"
+  - id: vendor_support
+    description: "Vendor, supplier or technical support thread"
+  - id: newsletter
+    description: "Newsletters, marketing, product announcements"
+  - id: notification
+    description: "Automated system notifications, alerts, CI, monitoring"
+  - id: personal
+    description: "Personal, non-work correspondence"
+  - id: other
+    description: "Anything that fits nothing above"
+
+priority:
+  # Deterministic overrides applied AFTER the LLM score. First match wins.
+  overrides:
+    - when: {sender_in: ["ceo@client.example"]}
+      set: P1
+    - when: {category_in: ["newsletter", "notification"]}
+      set: P4
+    - when: {subject_matches: "(?i)\\b(urgent|deadline|asap|due today)\\b"}
+      set: P1
+  levels:
+    P1: "Act today. Blocking someone, hard deadline <48h, or from a VIP sender."
+    P2: "Act this week. Real work, no immediate deadline."
+    P3: "Read and file. FYI, low effort, no action expected."
+    P4: "Ignore/archive. Bulk, automated or irrelevant."
+  vip_senders: []                   # exact addresses or @domain suffixes
+
+drafting:
+  enabled_for_categories: ["appointment", "request_action", "vendor_support", "personal"]
+  tone: "professional, concise, warm; no filler; no emojis"
+  max_words: 180
+  always_ask_before_committing: true   # drafts are staged in-app until you approve
+
+calendar:
+  calendar_id: "primary"
+  working_hours: {mon_fri: ["09:00", "13:00", "14:00", "18:00"], sat: [], sun: []}
+  slot_minutes: 30
+  buffer_minutes: 15
+  min_notice_hours: 24
+  search_days_ahead: 10
+  max_proposed_slots: 3
+
+sheets:
+  spreadsheet_id: ""                # create once, paste the ID here
+  tab_name: "Inbox Recap"
+  columns: [run_at, received_at, from, subject, category, priority, needs_appointment, summary, draft_status, gmail_link]
+
+n8n:
+  # Where your n8n lives. Self-hosted default is http://127.0.0.1:5678
+  # (prefer the IPv4 literal: on macOS "localhost" resolves to ::1 first and a
+  # Node process bound to IPv4 only will refuse it).
+  # n8n Cloud looks like https://<instance>.app.n8n.cloud
+  base_url: "http://127.0.0.1:5678"

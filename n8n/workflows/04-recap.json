@@ -1,0 +1,727 @@
+{
+  "name": "Gmail Assistant — Recap",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "run"
+            },
+            {
+              "name": "hours"
+            }
+          ]
+        }
+      },
+      "id": "19925113-1be3-5c6f-9f3d-0ab4842093f7",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Processed_Sender_Emails",
+          "cachedResultName": "Processed Sender Emails"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "condition": "gte",
+              "keyValue": "0"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "89f3fccb-8d79-5174-ba6e-57af5c36aa78",
+      "name": "Get All Processed Emails (For Recap)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        112
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": false,
+        "filters": {
+          "readStatus": "both",
+          "receivedAfter": "={{ $now.minus({ hours: (parseInt($('Execute Workflow Trigger').first().json.hours, 10) || parseInt((($('Get Model Setting').all().find(i => i.json && i.json.key === 'lookbackRecap') || {}).json || {}).value, 10) || 24) }).toISO() }}",
+          "q": "={{ $('Get Address Filter').first().json.value || '' }}"
+        },
+        "limit": "={{ parseInt((($('Get Model Setting').all().find(i => i.json && i.json.key === 'recapMaxEmails') || {}).json || {}).value, 10) || 300 }}"
+      },
+      "id": "4c9ca446-7fc2-565e-9ed5-ad8cd0ee2281",
+      "name": "Get many messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        112
+      ],
+      "webhookId": "5ee7d1db-4a6a-544d-9119-873e3a0581da",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Priority rubric from Settings (same as Mailroom app_settings.priority_rubric); empty or invalid = default.\nconst PRIORITY_LEVELS = [[5, 'CRITICAL', 'priorityCritical'], [4, 'HIGH', 'priorityHigh'], [3, 'MEDIUM', 'priorityMedium'],\n  [2, 'LOW', 'priorityLow'], [1, 'IGNORE', 'priorityIgnore']];\nconst PRIORITY_DEFAULTS = {\n  priorityCritical: 'action required within roughly 24 hours, hard deadline, account security or unauthorized-access alert, payment due, legal or contractual obligation.',\n  priorityHigh: 'action required but not same-day; direct personal or professional correspondence expecting a reply; work requests; appointments needing confirmation.',\n  priorityMedium: 'worth keeping as a record but no action needed: receipts, order and delivery confirmations, already-booked appointments, official documents.',\n  priorityLow: 'informational only, mildly relevant: newsletters on subscribed topics, job postings, community or event announcements.',\n  priorityIgnore: 'marketing, promotions, cold sales outreach, spam, routine automated notifications with no informational value.',\n  priorityRules: 'judge priority by what the email actually demands of the recipient, not by how urgent the sender claims it is — promotional mail written in urgent language is still 1. A one-time passcode or login code is 5 only if it represents pending account access; an already-used or expired code is 3. Do not inflate scores: in a typical inbox most emails are 1 or 2.'\n};\nlet settingRows = [];\ntry { settingRows = $('Get Model Setting').all().map((i) => i.json || {}); } catch (e) { settingRows = []; }\nfunction prioritySetting(k) {\n  const r = settingRows.find((x) => x.key === k);\n  const raw = r && r.value != null ? String(r.value) : '';\n  const v = k === 'priorityRules' ? raw.trim() : raw.replace(/\\s+/g, ' ').trim();\n  return v && v.length <= (k === 'priorityRules' ? 2000 : 600) ? v : PRIORITY_DEFAULTS[k];\n}\nconst priorityRubric = ['STEP 2 — PRIORITY: assign every email an integer priority from 1 to 5 using this rubric:']\n  .concat(PRIORITY_LEVELS.map((l) => l[0] + ' = ' + l[1] + ' — ' + prioritySetting(l[2]))).join('\\n') +\n  '\\n\\nScoring rules: ' + prioritySetting('priorityRules');\n\n// Gmail ids per batch (size from Settings, default 10); a run with no mail still produces one (empty) batch so the recap is written.\nconst items = $input.all().filter((item) => item.json && item.json.id);\nlet BATCH_SIZE = 10;\ntry { const r = $('Get Model Setting').all().find((i) => i.json && i.json.key === 'recapBatchSize'); const v = parseInt(r && r.json.value, 10); if (v > 0) BATCH_SIZE = v; } catch (e) { BATCH_SIZE = 10; }\nconst totalCount = items.length;\nconst batchCount = Math.max(1, Math.ceil(totalCount / BATCH_SIZE));\nconst batches = [];\n\nfor (let i = 0; i < totalCount; i += BATCH_SIZE) {\n  const batchItems = items.slice(i, i + BATCH_SIZE);\n  const lines = batchItems.map((item, idx) => {\n    const j = item.json;\n    const date = j.internalDate ? new Date(Number(j.internalDate)).toISOString().slice(0, 10) : 'unknown';\n    const snippet = (j.snippet || '').replace(/\\s+/g, ' ').trim().slice(0, 200);\n    return `${i + idx + 1}. Subject: ${j.Subject || '(no subject)'}\\nFrom: ${j.From || 'unknown'}\\nDate: ${date}\\nSnippet: ${snippet}`;\n  });\n  batches.push({\n    json: {\n      batchIndex: batches.length + 1,\n      batchCount,\n      totalEmailCount: totalCount,\n      emailCount: batchItems.length,\n      emailList: lines.join('\\n\\n'),\n      emailIds: batchItems.map((item) => item.json.id || ''),\n      emailThreadIds: batchItems.map((item) => item.json.threadId || ''),\n      priorityRubric\n    }\n  });\n}\n\n// Guarantee at least one item downstream even if the mailbox returned zero messages.\nif (batches.length === 0) {\n  batches.push({ json: { batchIndex: 1, batchCount: 1, totalEmailCount: 0, emailCount: 0, emailList: '(no emails in this batch)', emailIds: [], emailThreadIds: [], priorityRubric } });\n}\n\nreturn batches;"
+      },
+      "id": "a73c17e2-6ca9-5696-bfa4-b5584bb563e5",
+      "name": "Build Email Recap Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are analyzing batch {{ $json.batchIndex }} of {{ $json.batchCount }} in a larger email recap job: {{ $json.emailCount }} emails in this batch ({{ $json.totalEmailCount }} total across all batches). Process every one of these {{ $json.emailCount }} emails in this batch — do not skip any, and do not stop early.\n\nEmails in this batch:\n{{ $json.emailList }}\n\nSTEP 1 — TOPIC: assign each email a short topic label (2-4 words) you define yourself, based on its actual content. Do not use a fixed or predetermined category list. Emails about a similar subject should get the same topic label so they can be grouped together later.\n\n{{ $json.priorityRubric }}\n\nSTEP 3 — SUMMARY: for each email write a one-sentence factual summary of what the email actually says. This summary is the main thing the reader will see, so it must convey the substance — the specific offer, amount, request, date, or event — well enough that they do not need to open the email. Never write a summary that only restates the subject line or the sender's category (bad: 'A newsletter from Learnn'; good: 'Learnn promotes five summer courses, including one on the EU AI Act'). Write summaries in the same language as the email itself.\n\nAlso give a priorityReason of at most 12 words justifying the score.\n\nOUTPUT FORMAT — CRITICAL: respond with ONLY the JSON object required by the schema below and nothing else — no explanatory text before or after it, no markdown code fences. You must include all {{ $json.emailCount }} emails from this batch in your output, none omitted.",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "246dedb9-45b9-5e11-870e-5e2b8a15d2aa",
+      "name": "Topic Clustering - Anthropic",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        896,
+        512
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"emails\": [\n    {\n      \"subject\": \"OTP autorizzativo\",\n      \"from\": \"Aruba\",\n      \"date\": \"2026-08-10\",\n      \"topic\": \"Account Security\",\n      \"priority\": 5,\n      \"priorityReason\": \"Account access code, time-sensitive\",\n      \"summary\": \"One-time passcode required to authorize an Aruba account action.\"\n    }\n  ]\n}"
+      },
+      "id": "ad29c441-3877-5056-8970-db68cb091139",
+      "name": "Recap Topic Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Port of logic.run_summary + summary_lines (used inside Format Recap Text).\nfunction rsMs(v) {\n  if (v == null || v === '') return 0;\n  if (v instanceof Date) return v.getTime();\n  if (typeof v === 'number') return v;\n  const s = String(v);\n  if (/^\\d+(\\.\\d+)?$/.test(s)) return Math.floor(Number(s));\n  const d = DateTime.fromISO(s, { zone: 'Europe/Rome' });\n  return d.isValid ? d.toMillis() : 0;\n}\nfunction runSummary(processed, decisions, since, nowDT, engine) {\n  const REPLY = ['none', 'pending', 'awaiting_approval', 'withdrawn'];\n  const t0 = since ? rsMs(since) : 0;\n  const fresh = processed.filter(function (r) { return rsMs(r.processedAt) >= t0; });\n  let days = 7;\n  try { const r = $('Get Model Setting').all().find(function (i) { return i.json && i.json.key === 'followUpDays'; }); const v = parseInt(r && r.json.value, 10); if (v > 0) days = v; } catch (e) { days = 7; }\n  const week = nowDT.minus({ days: days }).toMillis();\n  const newest = {};\n  processed.forEach(function (r) {\n    if (r.threadId && REPLY.indexOf(r.proposalStatus) >= 0 && rsMs(r.processedAt) >= week) {\n      if (!newest[r.threadId] || (Number(r.id) || 0) > (Number(newest[r.threadId].id) || 0)) newest[r.threadId] = r;\n    }\n  });\n  const open = Object.keys(newest).map(function (k) { return newest[k]; });\n  const decNew = decisions.filter(function (d) { return rsMs(d.createdAt) >= t0; });\n  const n = function (arr, f) { return arr.filter(f).length; };\n  return {\n    engine: engine || '', at: nowDT.toISO({ suppressMilliseconds: true }), since: String(since || ''), days: days,\n    newEmails: fresh.length,\n    draftsCreated: n(fresh, function (r) { return REPLY.indexOf(r.proposalStatus) >= 0; }),\n    meetingProposals: n(fresh, function (r) { return r.proposalStatus === 'pending' || r.proposalStatus === 'withdrawn'; }),\n    noReplyNeeded: n(fresh, function (r) { return r.proposalStatus === 'no_reply_needed'; }),\n    bookingNotes: n(decNew, function (d) { return d.kind === 'meeting'; }),\n    eventNotes: n(decNew, function (d) { return d.kind === 'event'; }),\n    draftsReady: n(open, function (r) { return r.draftStatus === 'ready'; }),\n    draftsSent: n(open, function (r) { return r.draftStatus === 'sent'; }),\n    draftsDeleted: n(open, function (r) { return r.draftStatus === 'deleted'; }),\n    notesWaiting: n(decisions, function (d) { return d.status === 'pending' && (d.kind === 'meeting' || d.kind === 'event'); })\n  };\n}\nfunction summaryLines(s) {\n  return [\n    'New emails handled: ' + s.newEmails + (s.newEmails ? '' : ' (nothing new since the last run)'),\n    'Reply drafts created: ' + s.draftsCreated + ' (with proposed times: ' + s.meetingProposals + ') | no reply needed: ' + s.noReplyNeeded,\n    'Notes created: ' + s.bookingNotes + ' BOOK? | ' + s.eventNotes + ' event',\n    'Last ' + (s.days || 7) + ' days: ' + s.draftsReady + ' drafts ready, not sent | ' + s.draftsSent + ' sent | ' + s.draftsDeleted + ' deleted, not sent | ' + s.notesWaiting + ' notes waiting for a decision'\n  ];\n}\n\nconst allItems = $input.all();\nconst LEVELS = [\n  { score: 5, label: 'CRITICAL' },\n  { score: 4, label: 'HIGH' },\n  { score: 3, label: 'MEDIUM' },\n  { score: 2, label: 'LOW' },\n  { score: 1, label: 'IGNORE' }\n];\n\n// Pull the original per-batch Gmail ids (same order/index as the LLM batches) to re-attach identity.\nlet batchInputs = [];\ntry {\n  batchInputs = $(\"Build Email Recap Payload\").all();\n} catch (e) {\n  batchInputs = [];\n}\n\n// Pull the current Processed Sender Emails table, freshly re-fetched after this run's drafting branch.\nlet processedRows = [];\ntry {\n  processedRows = $(\"Get All Processed Emails (For Recap)\").all().map((it) => it.json);\n} catch (e) {\n  processedRows = [];\n}\nconst processedById = new Map();\nfor (const row of processedRows) {\n  if (row && row.trackedGmailId) {\n    const prev = processedById.get(String(row.trackedGmailId));\n    if (!prev || (Number(row.id) || 0) >= (Number(prev.id) || 0)) processedById.set(String(row.trackedGmailId), row);\n  }\n}\nconst DRAFT_LABEL = { ready: 'Draft ready, not sent', sent: 'Sent', deleted: 'Draft deleted, not sent',\n  discarded: 'Discarded', superseded: 'Replaced by a newer draft' };\n\n// Flatten all batches into one list of classified emails, re-attaching the Gmail id by position.\nlet rawEmails = [];\nfor (let b = 0; b < allItems.length; b++) {\n  const out = (allItems[b].json && allItems[b].json.output) || allItems[b].json || {};\n  const batchEmails = out.emails || [];\n  const ids = (batchInputs[b] && batchInputs[b].json && batchInputs[b].json.emailIds) || [];\n  if (!ids.length) continue;        // empty run: ignore whatever the model returned for \"(no emails)\"\n  const threads = (batchInputs[b] && batchInputs[b].json && batchInputs[b].json.emailThreadIds) || [];\n  for (let i = 0; i < batchEmails.length; i++) {\n    rawEmails.push(Object.assign({}, batchEmails[i], { gmailId: ids[i] || '', threadId: threads[i] || '' }));\n  }\n}\n\nconst normalized = rawEmails.map((e) => {\n  const processedRow = e.gmailId ? processedById.get(String(e.gmailId)) : undefined;\n  let replyStatus = 'Not tracked';\n  let scheduleStatus = '';\n  if (processedRow) {\n    const ps = processedRow.proposalStatus;\n    replyStatus = ps === 'no_reply_needed' ? 'No reply needed' : (DRAFT_LABEL[String(processedRow.draftStatus || '')] || 'Drafted');\n    if (ps === 'confirmed') scheduleStatus = 'Confirmed';\n    else if (ps === 'pending') scheduleStatus = 'Proposed, awaiting confirmation';\n    else if (ps === 'awaiting_approval') scheduleStatus = 'Awaiting your BOOK';\n    else if (ps !== 'no_reply_needed' && ps !== 'withdrawn') scheduleStatus = 'N/A';\n  }\n  return {\n    gmailId: e.gmailId || '',\n    threadId: e.threadId || '',\n    subject: e.subject || '(no subject)',\n    from: e.from || 'unknown',\n    date: e.date || 'unknown',\n    summary: e.summary || '(no summary returned)',\n    priorityReason: e.priorityReason || '',\n    priority: Math.min(5, Math.max(1, Math.round(Number(e.priority)) || 1)),\n    topic: (e.topic || 'Uncategorized').toString().trim() || 'Uncategorized',\n    replyStatus,\n    scheduleStatus\n  };\n});\n\nconst totalEmails = normalized.length;\nconst dateStr = $now.toFormat('dd-MM-yyyy');\nconst timeStr = $now.toFormat('HH:mm');\n\nlet text = '';\nconst boldRanges = [];\n\ntext += 'EMAIL RECAP\\n';\ntext += 'Generated ' + dateStr + ' ' + timeStr + '  |  ' + totalEmails + ' emails\\n\\n';\n\n// Run summary: what happened since the previous recap, and what is still open.\nlet decisions = [];\ntry { decisions = $('Get Decisions (Recap)').all().map((it) => it.json).filter((d) => d && d.id != null); } catch (e) { decisions = []; }\nlet since = '';\ntry { since = String(($('Get Last Recap').first().json || {}).generatedAt || ''); } catch (e) { since = ''; }\nif (!since) since = $now.minus({ hours: 24 }).toISO();\nconst summary = runSummary(processedRows.filter((r) => r && r.trackedGmailId), decisions, since, $now, 'n8n');\nconst sHead = 'RUN SUMMARY  (n8n)';\nboldRanges.push({ start: text.length, end: text.length + sHead.length });\ntext += sHead + '\\n' + summaryLines(summary).map((l) => '    ' + l + '\\n').join('') + '\\n';\n\nfor (const level of LEVELS) {\n  const emails = normalized.filter((e) => e.priority === level.score);\n  if (emails.length === 0) continue;\n\n  const header = level.label + '  (' + emails.length + ')';\n  boldRanges.push({ start: text.length, end: text.length + header.length });\n  text += header + '\\n';\n\n  emails.forEach((e, idx) => {\n    text += '    ' + (idx + 1) + '. ' + e.subject + '\\n';\n    text += '        Topic: ' + e.topic + '\\n';\n    text += '        ' + e.summary + '\\n';\n    let meta = '        From: ' + e.from + '  |  Date: ' + e.date;\n    if (e.priorityReason) {\n      meta += '  |  Why ' + level.label + ': ' + e.priorityReason;\n    }\n    text += meta + '\\n';\n    let status = '        Reply: ' + e.replyStatus;\n    if (e.scheduleStatus) {\n      status += '  |  Schedule: ' + e.scheduleStatus;\n    }\n    text += status + '\\n\\n';\n  });\n}\n\nif (totalEmails === 0) {\n  text += '(No emails in this window.)\\n';\n}\n\n// Google Docs indexes count UTF-16 code units, which is what JS string length counts.\nconst requests = [{ insertText: { location: { index: 1 }, text: text } }];\nfor (const r of boldRanges) {\n  requests.push({\n    updateTextStyle: {\n      range: { startIndex: 1 + r.start, endIndex: 1 + r.end },\n      textStyle: { bold: true },\n      fields: 'bold'\n    }\n  });\n}\n\nreturn [{\n  json: {\n    title: 'Email Recap - ' + dateStr + ' ' + timeStr,\n    content: text,\n    requests: requests,\n    emailCount: totalEmails,\n    generatedAt: $now.toISO(),\n    // Structured copy for the Mailroom app (Recaps tab), saved in Inbox Pilot Recaps.\n    itemsJson: JSON.stringify(normalized),\n    runJson: JSON.stringify(summary)\n  }\n}];"
+      },
+      "id": "32d55686-0000-50f6-a829-22795d25643a",
+      "name": "Format Recap Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "folderId": "REPLACE_WITH_DRIVE_FOLDER_ID",
+        "title": "={{ $json.title }}"
+      },
+      "id": "6a2115de-619f-549e-a143-16c06ffdf893",
+      "name": "Create Recap Doc",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        304
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/{{ $json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $('Format Recap Text').item.json.requests }) }}",
+        "options": {}
+      },
+      "id": "65afa041-84c6-56e0-ac9b-80c1a269ef38",
+      "name": "Write & Style Recap Doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1696,
+        304
+      ],
+      "notes": "Uses the Google Docs API batchUpdate endpoint directly: the n8n Google Docs node can insert text but cannot apply bold/character styling.",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are analyzing batch {{ $json.batchIndex }} of {{ $json.batchCount }} in a larger email recap job: {{ $json.emailCount }} emails in this batch ({{ $json.totalEmailCount }} total across all batches). Process every one of these {{ $json.emailCount }} emails in this batch — do not skip any, and do not stop early.\n\nEmails in this batch:\n{{ $json.emailList }}\n\nSTEP 1 — TOPIC: assign each email a short topic label (2-4 words) you define yourself, based on its actual content. Do not use a fixed or predetermined category list. Emails about a similar subject should get the same topic label so they can be grouped together later.\n\nSTEP 2 — PRIORITY: assign every email an integer priority from 1 to 5 using this rubric:\n5 = CRITICAL — action required within roughly 24 hours, hard deadline, account security or unauthorized-access alert, payment due, legal or contractual obligation.\n4 = HIGH — action required but not same-day; direct personal or professional correspondence expecting a reply; work requests; appointments needing confirmation.\n3 = MEDIUM — worth keeping as a record but no action needed: receipts, order and delivery confirmations, already-booked appointments, official documents.\n2 = LOW — informational only, mildly relevant: newsletters on subscribed topics, job postings, community or event announcements.\n1 = IGNORE — marketing, promotions, cold sales outreach, spam, routine automated notifications with no informational value.\n\nScoring rules: judge priority by what the email actually demands of the recipient, not by how urgent the sender claims it is — promotional mail written in urgent language is still 1. A one-time passcode or login code is 5 only if it represents pending account access; an already-used or expired code is 3. Do not inflate scores: in a typical inbox most emails are 1 or 2.\n\nSTEP 3 — SUMMARY: for each email write a one-sentence factual summary of what the email actually says. This summary is the main thing the reader will see, so it must convey the substance — the specific offer, amount, request, date, or event — well enough that they do not need to open the email. Never write a summary that only restates the subject line or the sender's category (bad: 'A newsletter from Learnn'; good: 'Learnn promotes five summer courses, including one on the EU AI Act'). Write summaries in the same language as the email itself.\n\nAlso give a priorityReason of at most 12 words justifying the score.\n\nOUTPUT FORMAT — CRITICAL: respond with ONLY the JSON object required by the schema below and nothing else — no explanatory text before or after it, no markdown code fences. You must include all {{ $json.emailCount }} emails from this batch in your output, none omitted.",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "9eb7c94e-7b2f-5028-915f-cfec443cdc79",
+      "name": "Topic Clustering - OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        896,
+        0
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "b28ca025-f3c3-57ad-9f84-a24b6593e954",
+      "name": "OpenAI Chat Model (Recap)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        240
+      ],
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are analyzing batch {{ $json.batchIndex }} of {{ $json.batchCount }} in a larger email recap job: {{ $json.emailCount }} emails in this batch ({{ $json.totalEmailCount }} total across all batches). Process every one of these {{ $json.emailCount }} emails in this batch — do not skip any, and do not stop early.\n\nEmails in this batch:\n{{ $json.emailList }}\n\nSTEP 1 — TOPIC: assign each email a short topic label (2-4 words) you define yourself, based on its actual content. Do not use a fixed or predetermined category list. Emails about a similar subject should get the same topic label so they can be grouped together later.\n\nSTEP 2 — PRIORITY: assign every email an integer priority from 1 to 5 using this rubric:\n5 = CRITICAL — action required within roughly 24 hours, hard deadline, account security or unauthorized-access alert, payment due, legal or contractual obligation.\n4 = HIGH — action required but not same-day; direct personal or professional correspondence expecting a reply; work requests; appointments needing confirmation.\n3 = MEDIUM — worth keeping as a record but no action needed: receipts, order and delivery confirmations, already-booked appointments, official documents.\n2 = LOW — informational only, mildly relevant: newsletters on subscribed topics, job postings, community or event announcements.\n1 = IGNORE — marketing, promotions, cold sales outreach, spam, routine automated notifications with no informational value.\n\nScoring rules: judge priority by what the email actually demands of the recipient, not by how urgent the sender claims it is — promotional mail written in urgent language is still 1. A one-time passcode or login code is 5 only if it represents pending account access; an already-used or expired code is 3. Do not inflate scores: in a typical inbox most emails are 1 or 2.\n\nSTEP 3 — SUMMARY: for each email write a one-sentence factual summary of what the email actually says. This summary is the main thing the reader will see, so it must convey the substance — the specific offer, amount, request, date, or event — well enough that they do not need to open the email. Never write a summary that only restates the subject line or the sender's category (bad: 'A newsletter from Learnn'; good: 'Learnn promotes five summer courses, including one on the EU AI Act'). Write summaries in the same language as the email itself.\n\nAlso give a priorityReason of at most 12 words justifying the score.\n\nOUTPUT FORMAT — CRITICAL: respond with ONLY the JSON object required by the schema below and nothing else — no explanatory text before or after it, no markdown code fences. You must include all {{ $json.emailCount }} emails from this batch in your output, none omitted.",
+        "hasOutputParser": true,
+        "batching": {
+          "batchSize": 1,
+          "delayBetweenBatches": 500
+        }
+      },
+      "id": "de851fb3-cdff-53bf-89ed-6878cd8bbd16",
+      "name": "Topic Clustering - Ollama",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        0,
+        944
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "model": "=qwen3:32b",
+        "options": {
+          "think": false,
+          "temperature": 0.2,
+          "keepAlive": "24h",
+          "numCtx": 4096,
+          "format": "json"
+        }
+      },
+      "id": "4446cca0-8b0e-5f99-91d2-d1952c34c764",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        80,
+        1168
+      ],
+      "credentials": {
+        "ollamaApi": {
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ (($('Get Model Setting').all().find(i => i.json.key === 'n8nModel') || { json: {} }).json.value) || 'claude-haiku-4-5-20251001' }}"
+        },
+        "options": {
+          "thinkingMode": "={{ (() => { const s = $('Get Model Setting').all(); const g = k => ((s.find(i => i.json.key === k) || { json: {} }).json.value || ''); return g('n8nModel') && ['low', 'medium', 'high'].includes(g('n8nEffort')) ? 'adaptive' : 'disabled'; })() }}",
+          "effort": "={{ (($('Get Model Setting').all().find(i => i.json.key === 'n8nEffort') || { json: {} }).json.value) || 'medium' }}"
+        }
+      },
+      "id": "9d5b37f9-20d8-5ff4-8768-756cb8599930",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        864,
+        736
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "id": "5468437d-a6b7-5764-92df-e39873121824",
+      "name": "Get Address Filter",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        320
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Settings",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "eq",
+              "keyName": "key",
+              "keyValue": "addressQuery"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "resource": "row",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "c98d903c-1261-5924-a5ea-6bf04c9406b6",
+      "name": "Save Recap Copy",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        304
+      ],
+      "parameters": {
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "source",
+              "id": "source",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "title",
+              "id": "title",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "generatedAt",
+              "id": "generatedAt",
+              "required": false,
+              "type": "dateTime"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "docUrl",
+              "id": "docUrl",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "emailCount",
+              "id": "emailCount",
+              "required": false,
+              "type": "number"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "itemsJson",
+              "id": "itemsJson",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "runJson",
+              "id": "runJson",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "docUrl": "={{ 'https://docs.google.com/document/d/' + $('Create Recap Doc').item.json.id + '/edit' }}",
+            "emailCount": "={{ $('Format Recap Text').item.json.emailCount }}",
+            "generatedAt": "={{ $('Format Recap Text').item.json.generatedAt }}",
+            "itemsJson": "={{ $('Format Recap Text').item.json.itemsJson }}",
+            "source": "n8n",
+            "title": "={{ $('Format Recap Text').item.json.title }}",
+            "runJson": "={{ $('Format Recap Text').item.json.runJson }}"
+          }
+        },
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Recaps",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Recaps"
+        },
+        "operation": "insert",
+        "options": {},
+        "resource": "row"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "19ee615e-57f0-597b-b228-19cbe72505cd",
+      "name": "Get Last Recap",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        320
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Recaps",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Recaps"
+        },
+        "limit": 1,
+        "operation": "get",
+        "orderBy": true,
+        "orderByColumn": "generatedAt",
+        "orderByDirection": "DESC",
+        "returnAll": false
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "904d758c-94b8-55bb-9b70-626ee7a29127",
+      "name": "Get Decisions (Recap)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        320
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Decisions",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Decisions"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "gte",
+              "keyValue": "0"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "ace30724-a60d-5123-9aed-7770e21b8425",
+      "name": "Get Model Setting",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        168,
+        480
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "cachedResultName": "Inbox Pilot Settings",
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "condition": "isNotEmpty",
+              "keyName": "key"
+            }
+          ]
+        },
+        "matchType": "allConditions",
+        "operation": "get",
+        "resource": "row",
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Get many messages": {
+      "main": [
+        [
+          {
+            "node": "Build Email Recap Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Recap Payload": {
+      "main": [
+        [
+          {
+            "node": "Topic Clustering - Anthropic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recap Topic Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Topic Clustering - Anthropic",
+            "type": "ai_outputParser",
+            "index": 0
+          },
+          {
+            "node": "Topic Clustering - OpenAI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic Clustering - Anthropic": {
+      "main": [
+        [
+          {
+            "node": "Format Recap Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Recap Text": {
+      "main": [
+        [
+          {
+            "node": "Create Recap Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Recap Doc": {
+      "main": [
+        [
+          {
+            "node": "Write & Style Recap Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Recap)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Topic Clustering - OpenAI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Topic Clustering - Ollama",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Topic Clustering - Anthropic",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic Clustering - OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Format Recap Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Address Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write & Style Recap Doc": {
+      "main": [
+        [
+          {
+            "node": "Save Recap Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Processed Emails (For Recap)": {
+      "main": [
+        [
+          {
+            "node": "Get Last Recap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Recap": {
+      "main": [
+        [
+          {
+            "node": "Get Decisions (Recap)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Decisions (Recap)": {
+      "main": [
+        [
+          {
+            "node": "Get many messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Address Filter": {
+      "main": [
+        [
+          {
+            "node": "Get Model Setting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Model Setting": {
+      "main": [
+        [
+          {
+            "node": "Get All Processed Emails (For Recap)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate",
+    "timeSavedMode": "dynamic",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "template": "mailroom",
+    "file": "04-recap.json"
+  },
+  "description": "Sub-workflow: builds the priority-ranked Google Doc recap of the last 24h of inbox mail. Called by Gmail Assistant daily at 14:00 Europe/Rome, after drafting finishes."
+}

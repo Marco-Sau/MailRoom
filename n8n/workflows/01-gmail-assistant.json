@@ -1,0 +1,354 @@
+{
+  "name": "Gmail Assistant",
+  "nodes": [
+    {
+      "id": "8e86a2a7-20e9-5263-8600-1aafa20dd92f",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        688
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c2647d9c-f8c7-5b6c-be86-d1d9be8b6019",
+      "name": "Daily Trigger 14:00",
+      "disabled": true,
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -160,
+        880
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 14
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "784eb88c-a062-5b59-ab6e-563b2ebaced6",
+      "name": "Evening Trigger",
+      "disabled": true,
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -384,
+        1104
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 19
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ad0e4155-0390-5d8d-bc4d-de45ab44066c",
+      "name": "Sender Whitelist Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        176,
+        144
+      ],
+      "parameters": {
+        "content": "## Sender whitelist\nThis orchestrator only holds the 3 triggers + the two sub-workflow calls. The actual drafting/booking logic (and the sender whitelist) now lives in **Gmail Assistant — Drafting**.\n\nTo add/remove a tracked sender: open **Gmail Assistant — Drafting** and edit the **Tracked Senders** data table (used by its \"Get Tracked Senders\" node).\n\nColumns:\n- matchPatterns: sender email(s), comma-separated for aliases\n- senderName: display name used in the signature/prompt\n- active: true/false (set false to pause without deleting)\n- notes: tone/language instructions for the draft\n\nThe recap logic lives in **Gmail Assistant — Recap**.",
+        "height": 320,
+        "width": 340,
+        "color": 5
+      }
+    },
+    {
+      "id": "e455e546-c676-58ea-90e1-2fa8f526be00",
+      "name": "Run Drafting",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "position": [
+        64,
+        688
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_WORKFLOW_ID__Drafting",
+          "cachedResultName": "Gmail Assistant — Drafting"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "run",
+              "id": "run",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "hours",
+              "id": "hours",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "hours": "={{ (() => { try { const h = parseInt((($('Webhook').first().json || {}).body || {}).hours, 10); return h >= 1 && h <= 168 ? String(h) : ''; } catch (e) { return ''; } })() }}",
+            "run": "true"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "3ff9c193-e5e1-5487-8db9-e8a8215096f4",
+      "name": "Run Recap",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        688
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_WORKFLOW_ID__Recap",
+          "cachedResultName": "Gmail Assistant — Recap"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "run",
+              "id": "run",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "hours",
+              "id": "hours",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "hours": "={{ (() => { try { const h = parseInt((($('Webhook').first().json || {}).body || {}).hours, 10); return h >= 1 && h <= 168 ? String(h) : ''; } catch (e) { return ''; } })() }}",
+            "run": "true"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "038af6fc-667c-51a4-bb7d-8126c5896ce0",
+      "name": "Webhook",
+      "webhookId": "caa89665-d629-52c7-8577-59d85793cb14",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        496
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mailroom-run-CHANGE-ME",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Inbox Pilot webhook key"
+        }
+      }
+    },
+    {
+      "id": "e5e8892b-6c6c-552c-b9f3-0128a999670a",
+      "name": "Run Events",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "position": [
+        288,
+        688
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "Gmail Assistant — Events",
+          "mode": "id",
+          "value": "REPLACE_WITH_WORKFLOW_ID__Events"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "run",
+              "id": "run",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "hours",
+              "id": "hours",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "hours": "={{ (() => { try { const h = parseInt((($('Webhook').first().json || {}).body || {}).hours, 10); return h >= 1 && h <= 168 ? String(h) : ''; } catch (e) { return ''; } })() }}",
+            "run": "true"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "2eaaf8fb-088f-542c-94cc-a3ebcf46da94",
+      "name": "Respond: Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -160,
+        496
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"started\", \"executionId\": $execution.id, \"workflowId\": $workflow.id } }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Drafting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evening Trigger": {
+      "main": [
+        []
+      ]
+    },
+    "Daily Trigger 14:00": {
+      "main": [
+        [
+          {
+            "node": "Run Drafting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Drafting": {
+      "main": [
+        [
+          {
+            "node": "Run Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Events": {
+      "main": [
+        [
+          {
+            "node": "Run Recap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond: Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond: Started": {
+      "main": [
+        [
+          {
+            "node": "Run Drafting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate",
+    "timezone": "Europe/Rome",
+    "saveExecutionProgress": true
+  },
+  "meta": {
+    "template": "mailroom",
+    "file": "01-gmail-assistant.json"
+  },
+  "description": "Daily 14:00 Europe/Rome (or webhook from Inbox Pilot): drafts replies with fair slot proposals, checks event/webinar/course emails against the calendar, then writes the 24h recap."
+}

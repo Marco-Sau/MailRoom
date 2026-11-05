@@ -1,0 +1,187 @@
+{
+  "name": "Gmail Assistant — Busy Calendars",
+  "nodes": [
+    {
+      "id": "a3664063-efd9-5d1d-bc11-651000b45bb3",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "days",
+              "type": "number"
+            },
+            {
+              "name": "extraCalendars",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4c93ef72-fd36-5ccd-ab93-f99880f6d63d",
+      "name": "Get Settings",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_TABLE_ID__Inbox_Pilot_Settings",
+          "cachedResultName": "Inbox Pilot Settings"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "condition": "isNotEmpty"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ea9f9a81-2df0-560d-badb-d2b7f5bd258e",
+      "name": "List Busy Calendars",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "jsCode": "function parseJ(s, f) { try { const v = JSON.parse(s); return v == null ? f : v; } catch (e) { return f; } }\n\nfunction readSettings(node) {\n  const st = {};\n  try { $(node).all().forEach(function (it) { if (it.json && it.json.key) st[it.json.key] = String(it.json.value == null ? '' : it.json.value); }); } catch (e) { /* defaults */ }\n  return st;\n}\n\nconst st = readSettings('Get Settings');\nconst names = {};\nparseJ(st.calendars, []).forEach(function (c) { if (c && c.id) names[c.id] = c.name || c.id; });\nconst ids = [];\nfunction add(id) { id = String(id || '').trim(); if (id && ids.indexOf(id) < 0) ids.push(id); }\nconst busy = parseJ(st.busyCalendars, null);\n(Array.isArray(busy) && busy.length ? busy : ['primary', 'primary']).forEach(add);\nlet days = 0;\n$('Start').all().forEach(function (it) {\n  const j = it.json || {};\n  String(j.extraCalendars || '').split(',').forEach(add);\n  days = Math.max(days, Number(j.days) || 0);\n});\ndays = Math.min(days || 76, 366);\nconst timeMax = DateTime.now().plus({ days: days }).toISO();\nreturn ids.map(function (id) {\n  return { json: { calendarId: id, calendarName: names[id] || (id === 'primary' ? 'Primary' : id), timeMax: timeMax }, pairedItem: { item: 0 } };\n});\n"
+      }
+    },
+    {
+      "id": "193a72c3-7b5d-53cd-aa1b-15d6e7051be9",
+      "name": "Get Busy Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarId }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $now.toISO() }}",
+        "timeMax": "={{ $json.timeMax }}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "id": "ab7f931b-20a5-5993-b864-1b626738e1c9",
+      "name": "Tag Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const out = [];\nconst listed = $('List Busy Calendars').all().map(function (it) { return it.json.calendarName; });\n$input.all().forEach(function (it, i) {\n  const j = it.json || {};\n  let src = {};\n  try { src = $('List Busy Calendars').itemMatching(i).json || {}; } catch (e) { src = {}; }\n  if (j.error) {\n    out.push({ json: { __calendarError: true, calendarId: src.calendarId || '', calendarName: src.calendarName || '',\n      message: String((j.error && j.error.message) || j.error) } });\n    return;\n  }\n  if (!j.start) return;\n  out.push({ json: Object.assign({}, j, { __calendarId: src.calendarId || '', __calendarName: src.calendarName || '' }) });\n});\nout.push({ json: { __summary: true, calendars: listed } });\nreturn out;\n"
+      }
+    },
+    {
+      "id": "97069796-cae5-5506-a699-178064d71426",
+      "name": "Sticky Note de88b157",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        384,
+        0
+      ],
+      "parameters": {
+        "content": "## Busy calendars (shared)\nReturns every event of the calendars listed in **Inbox Pilot Settings → busyCalendars** (edited in the app), plus any extra calendar ids passed in, from now to now + days.\n\nEach event is tagged with `__calendarName`; a calendar that cannot be read returns `__calendarError` so callers refuse to propose times instead of double-booking. Used by Drafting, Events and Decisions.",
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Get Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Settings": {
+      "main": [
+        [
+          {
+            "node": "List Busy Calendars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Busy Calendars": {
+      "main": [
+        [
+          {
+            "node": "Get Busy Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Busy Events": {
+      "main": [
+        [
+          {
+            "node": "Tag Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "template": "mailroom",
+    "file": "06-busy-calendars.json"
+  },
+  "description": "Sub-workflow: returns events of all busy calendars (from Inbox Pilot Settings) plus extra calendar ids, tagged with calendar name; flags unreadable calendars."
+}
